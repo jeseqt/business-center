@@ -1,110 +1,94 @@
-
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1"
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-app-key',
-}
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { corsHeaders, verifyApp, createSupabaseClient } from "../_shared/auth-middleware.ts";
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseClient = createClient(
-      // Note: These env vars must be set in your Platform Supabase project
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supabase = createSupabaseClient();
 
-    // 1. Validate App Key
-    const appKey = req.headers.get('x-app-key')
-    if (!appKey) {
-      throw new Error('Missing x-app-key header')
+    // 1. Verify App
+    const appContext = await verifyApp(req, supabase);
+    const { app_id } = appContext;
+
+    // 2. Authenticate User (Bearer Token)
+    // 用量上报通常需要关联到具体用户，防止滥用
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('Missing Authorization header');
     }
-
-    const { data: appData, error: appError } = await supabaseClient
-      .from('platform_apps')
-      .select('id, status')
-      .eq('app_key', appKey)
-      .single()
-
-    if (appError || !appData) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid App Key' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    if (appData.status !== 'active') {
-      return new Response(
-        JSON.stringify({ error: 'App is not active' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // 2. Parse Body
-    const { external_user_id, model, tokens, metadata } = await req.json()
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
-    if (!external_user_id || !model || !tokens) {
-      throw new Error('Missing required fields')
+    if (userError || !user) {
+      throw new Error('Invalid user token');
     }
 
-    // 3. Ensure Platform User Exists
-    // Using upsert to handle race conditions simply
-    // Note: In production, you might want to separate user syncing from usage reporting for performance
-    const { data: userData, error: userError } = await supabaseClient
+    // 3. Find Platform User ID
+    const { data: platformUser, error: platformUserError } = await supabase
       .from('platform_users')
       .select('id')
-      .eq('app_id', appData.id)
-      .eq('external_user_id', external_user_id)
-      .maybeSingle()
+      .eq('app_id', app_id)
+      .eq('external_user_id', user.id)
+      .single();
 
-    let platformUserId = userData?.id
-
-    if (!platformUserId) {
-        const { data: newUser, error: createError } = await supabaseClient
-            .from('platform_users')
-            .insert({
-                app_id: appData.id,
-                external_user_id: external_user_id,
-                metadata: { source: 'auto-created-by-usage' }
-            })
-            .select('id')
-            .single()
-        
-        if (createError) throw createError
-        platformUserId = newUser.id
+    if (platformUserError || !platformUser) {
+      throw new Error('User not registered in this app context');
     }
 
-    // 4. Record Usage
-    const { error: usageError } = await supabaseClient
-      .from('platform_token_usage')
-      .insert({
-        app_id: appData.id,
-        platform_user_id: platformUserId,
-        model_name: model,
-        prompt_tokens: tokens.prompt || 0,
-        completion_tokens: tokens.completion || 0,
-        total_tokens: (tokens.prompt || 0) + (tokens.completion || 0),
-        // Simple cost calculation logic (should be configurable per model)
-        cost_usd: 0.00001 * ((tokens.prompt || 0) + (tokens.completion || 0)), 
-        request_metadata: metadata
-      })
+    // 4. Parse Body
+    const { 
+      model_name, 
+      prompt_tokens = 0, 
+      completion_tokens = 0, 
+      request_metadata = {} 
+    } = await req.json();
 
-    if (usageError) throw usageError
+    if (!model_name) {
+      throw new Error('Missing model_name');
+    }
+
+    // 简单估算成本 (示例费率，实际应从配置表读取)
+    // 假设: Input $5/1M, Output $15/1M
+    const cost = (prompt_tokens * 5 + completion_tokens * 15) / 1000000;
+
+    // 5. Record Usage
+    const usageData = {
+      app_id: app_id,
+      platform_user_id: platformUser.id,
+      model_name,
+      prompt_tokens,
+      completion_tokens,
+      total_tokens: prompt_tokens + completion_tokens,
+      cost_usd: cost,
+      request_metadata
+    };
+
+    const { data: usage, error: usageError } = await supabase
+      .from('platform_token_usage')
+      .insert(usageData)
+      .select()
+      .single();
+
+    if (usageError) {
+      console.error('Usage reporting failed', usageError);
+      throw new Error('Usage reporting failed');
+    }
 
     return new Response(
-      JSON.stringify({ success: true, message: 'Usage recorded' }),
+      JSON.stringify({
+        success: true,
+        data: usage
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
 
-  } catch (error) {
+  } catch (error: any) {
     return new Response(
       JSON.stringify({ error: error.message }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    );
   }
-})
+});

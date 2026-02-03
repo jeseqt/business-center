@@ -5,11 +5,12 @@ import { Button } from '../components/Button';
 import UserManagement from './UserManagement';
 import InviteManagement from './InviteManagement';
 import AppManagement from './AppManagement';
-import { Users, Ticket, LogOut, LayoutDashboard, Menu, Layers } from 'lucide-react';
+import UsageReports from './UsageReports';
+import { Users, Ticket, LogOut, LayoutDashboard, Menu, Layers, BarChart3 } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'apps'>('apps');
+  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'apps' | 'reports'>('apps');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = async () => {
@@ -19,6 +20,7 @@ export default function Dashboard() {
 
   const navItems = [
     { id: 'apps', label: '应用接入管理', icon: Layers },
+    { id: 'reports', label: '业务用量报表', icon: BarChart3 },
     { id: 'users', label: '用户与钱包', icon: Users },
     { id: 'invites', label: '邀请码管理', icon: Ticket },
   ] as const;
@@ -94,6 +96,7 @@ export default function Dashboard() {
             {activeTab === 'users' && <UserManagement />}
             {activeTab === 'invites' && <InviteManagement />}
             {activeTab === 'apps' && <AppManagement />}
+            {activeTab === 'reports' && <UsageReports />}
           </div>
         </main>
       </div>
