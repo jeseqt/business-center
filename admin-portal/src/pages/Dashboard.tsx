@@ -4,11 +4,12 @@ import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import UserManagement from './UserManagement';
 import InviteManagement from './InviteManagement';
-import { Users, Ticket, LogOut, LayoutDashboard, Menu } from 'lucide-react';
+import AppManagement from './AppManagement';
+import { Users, Ticket, LogOut, LayoutDashboard, Menu, Layers } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'invites'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'apps'>('apps');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = async () => {
@@ -17,6 +18,7 @@ export default function Dashboard() {
   };
 
   const navItems = [
+    { id: 'apps', label: '应用接入管理', icon: Layers },
     { id: 'users', label: '用户与钱包', icon: Users },
     { id: 'invites', label: '邀请码管理', icon: Ticket },
   ] as const;
@@ -89,22 +91,9 @@ export default function Dashboard() {
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-4 sm:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
-            <div className="flex items-end justify-between border-b pb-4 mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">
-                  {activeTab === 'users' ? '用户与钱包管理' : '邀请码生成与管理'}
-                </h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  {activeTab === 'users' 
-                    ? '查看全平台用户，管理其积分钱包与交易记录' 
-                    : '生成批量邀请码，监控使用情况与有效期'}
-                </p>
-              </div>
-            </div>
-            
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {activeTab === 'users' ? <UserManagement /> : <InviteManagement />}
-            </div>
+            {activeTab === 'users' && <UserManagement />}
+            {activeTab === 'invites' && <InviteManagement />}
+            {activeTab === 'apps' && <AppManagement />}
           </div>
         </main>
       </div>
