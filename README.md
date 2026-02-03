@@ -18,12 +18,13 @@ business-center/
 │       ├── fetch-notifications/# [Client API] 获取通知列表
 │       ├── submit-ticket/      # [Client API] 提交工单反馈
 │       └── _shared/            # 共享中间件 (鉴权、工具类)
-├── 001_platform_schema.sql     # 核心数据库结构
-├── 002_initial_seed.sql        # 初始化种子数据
-├── 004_config_center.sql       # 配置中心表结构
-├── 005_version_control.sql     # 版本管理表结构
-├── 006_notification_center.sql # 通知中心表结构
-├── 007_ticket_system.sql       # 工单系统表结构
+├── database/                   # 数据库脚本
+│   ├── 001_platform_schema.sql     # 核心数据库结构
+│   ├── 002_initial_seed.sql        # 初始化种子数据
+│   ├── 004_config_center.sql       # 配置中心表结构
+│   ├── 005_version_control.sql     # 版本管理表结构
+│   ├── 006_notification_center.sql # 通知中心表结构
+│   └── 007_ticket_system.sql       # 工单系统表结构
 └── README.md                   # 说明文档
 ```
 
@@ -247,7 +248,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 
 ## 部署说明
 
-1.  **数据库**: 执行 `*.sql` 脚本初始化表结构。
+1.  **数据库**: 执行 `database/*.sql` 脚本初始化表结构。
 2.  **后端函数**: 使用 `supabase functions deploy <function-name>` 部署。
     *   *注意*: 如果使用 Supabase 网页版编辑器，请务必将 `_shared` 目录下的代码手动合并到入口文件中。
 3.  **管理后台**: 进入 `admin-portal` 目录，配置 `.env.local` 后运行 `npm run dev`。
