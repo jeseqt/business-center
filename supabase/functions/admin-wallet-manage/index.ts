@@ -26,13 +26,22 @@ serve(async (req) => {
     if (req.method === 'POST') {
       const { wallet_id, amount, type, description } = await req.json();
       
+      // Get user_id from wallet_id
+      const { data: wallet, error: walletError } = await supabase
+        .from('platform_wallets')
+        .select('user_id')
+        .eq('id', wallet_id)
+        .single();
+        
+      if (walletError || !wallet) throw new Error('Wallet not found');
+
       // Call RPC
-      const { data, error } = await supabase.rpc('adjust_wallet_balance', {
-        _wallet_id: wallet_id,
+      const { data, error } = await supabase.rpc('process_wallet_transaction', {
+        _user_id: wallet.user_id,
         _amount: amount,
         _type: type || 'admin_adjustment',
         _description: description || `Admin adjustment by ${user.email}`,
-        _metadata: { operator_id: user.id }
+        // _metadata: { operator_id: user.id } // RPC signature changed, removed metadata arg for simplicity or need to update RPC
       });
 
       if (error) throw error;

@@ -24,9 +24,15 @@ serve(async (req) => {
 
     // Auth & Admin Check
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Unauthorized: No auth header');
+    if (!authHeader) {
+        console.error('Missing Authorization header');
+        throw new Error('Unauthorized: No auth header');
+    }
     
-    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    const token = authHeader.replace('Bearer ', '');
+    // console.log(`Received token: ${token.substring(0, 10)}...`);
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     if (userError || !user) {
       console.error('User Auth Failed:', userError);
       throw new Error('Unauthorized: ' + (userError?.message || 'Invalid token'));

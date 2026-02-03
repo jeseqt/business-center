@@ -77,11 +77,38 @@ serve(async (req) => {
       throw new Error('Order creation failed');
     }
 
-    // 6. Mock Payment Gateway
-    // 在真实场景中，这里会调用微信/支付宝统一下单接口
-    // 这里我们直接模拟返回一个支付链接或参数
+    // 6. Payment Processing
     let paymentResponse;
-    if (channel === 'mock') {
+    if (channel === 'wallet') {
+       // Wallet Payment: Deduct from global wallet
+       const { data: walletResult, error: walletError } = await supabase.rpc('process_wallet_transaction', {
+         _user_id: user.id, // Auth User ID (Global)
+         _amount: -amount, // Deduct amount (negative)
+         _type: 'payment',
+         _app_id: app_id,
+         _order_id: order.id,
+         _description: `Payment for order ${platformOrderNo}`
+       });
+
+       if (walletError || !walletResult.success) {
+         // Payment failed
+         await supabase.from('platform_orders').update({ status: 'failed' }).eq('id', order.id);
+         throw new Error(walletError?.message || walletResult?.error || 'Wallet payment failed');
+       }
+
+       // Payment success
+       await supabase.from('platform_orders').update({ 
+         status: 'paid', 
+         paid_at: new Date().toISOString() 
+       }).eq('id', order.id);
+
+       paymentResponse = {
+         success: true,
+         new_balance: walletResult.new_balance,
+         message: "Payment successful"
+       };
+
+    } else if (channel === 'mock') {
        // Mock: 直接返回成功模拟
        paymentResponse = {
          pay_url: `https://mock-payment.com/pay?order=${platformOrderNo}`,

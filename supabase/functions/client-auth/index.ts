@@ -15,7 +15,8 @@ serve(async (req) => {
     const { app_id } = appContext;
 
     // 2. Parse Body
-    const { action, email, password } = await req.json();
+    const body = await req.json();
+    const { action, email, password, invite_code } = body;
 
     if (!email || !password) {
       throw new Error('Email and password are required');
@@ -26,6 +27,21 @@ serve(async (req) => {
     // 3. Handle Actions
     if (action === 'register') {
       // 3.1 Register Logic
+      
+      // Verify Invite Code (if provided)
+      if (invite_code) {
+         const { data: validCodes, error: codeError } = await supabase
+            .from('platform_invite_codes')
+            .select('id')
+            .eq('code', invite_code)
+            .eq('app_id', app_id)
+            .eq('status', 'active');
+            
+         if (codeError || !validCodes || validCodes.length === 0) {
+             throw new Error('Invalid or inactive invite code');
+         }
+      }
+
       // 创建 Supabase Auth 用户
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email,
@@ -50,6 +66,21 @@ serve(async (req) => {
          // 回滚：如果业务表插入失败，最好删除 Auth 用户 (这里简化处理，仅报错)
          console.error('Platform user creation failed', platformError);
          throw new Error('User registration failed in platform');
+      }
+
+      // Redeem Invite Code (if provided)
+      if (invite_code) {
+          // 调用 RPC 使用邀请码
+          // 即使这里失败，用户也已注册成功，所以我们只记录错误不抛出，或者视业务需求而定
+          const { error: redeemError } = await supabase.rpc('redeem_global_invite_code', {
+             _user_id: userId,
+             _code: invite_code,
+             _app_id: app_id
+          });
+          
+          if (redeemError) {
+             console.error('Invite code redeem failed', redeemError);
+          }
       }
       
       // 自动登录

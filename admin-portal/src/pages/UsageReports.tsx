@@ -33,6 +33,7 @@ export default function UsageReports() {
   const [loading, setLoading] = useState(true);
   const [appStats, setAppStats] = useState<AppStat[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [categoryStats, setCategoryStats] = useState<{name: string, value: number}[]>([]);
   const [recentLogs, setRecentLogs] = useState<UsageRecord[]>([]);
   const [totalCost, setTotalCost] = useState(0);
 

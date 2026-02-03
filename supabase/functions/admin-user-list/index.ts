@@ -53,7 +53,7 @@ serve(async (req) => {
 
     let query = supabase
       .from('platform_users')
-      .select('*, platform_apps(name), platform_wallets(id, balance_permanent, balance_temporary)', { count: 'exact' });
+      .select('*, platform_apps(name)', { count: 'exact' });
 
     if (appId) query = query.eq('app_id', appId);
     if (keyword) {
@@ -64,11 +64,38 @@ serve(async (req) => {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    const { data, count, error } = await query
+    const { data: users, count, error } = await query
       .range(from, to)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
+
+    // Fetch wallets for these users
+    let data = users;
+    if (users && users.length > 0) {
+        // platform_users.external_user_id corresponds to auth.users.id
+        // platform_wallets.user_id corresponds to auth.users.id
+        const userIds = users.map((u: any) => u.external_user_id).filter((id: string) => !!id);
+        
+        // Use global wallet table
+        const { data: wallets } = await supabase
+            .from('platform_wallets')
+            .select('id, balance, currency, user_id')
+            .in('user_id', userIds);
+            
+        // Merge wallet info
+        data = users.map((u: any) => {
+            const wallet = wallets?.find((w: any) => w.user_id === u.external_user_id);
+            return {
+                ...u,
+                platform_wallets: wallet ? {
+                    id: wallet.id,
+                    balance_permanent: wallet.balance, // Map new balance to old field name for frontend compatibility
+                    balance_temporary: 0
+                } : null
+            };
+        });
+    }
 
     return new Response(
       JSON.stringify({ data, count, page, pageSize }),

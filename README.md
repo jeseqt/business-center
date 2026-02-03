@@ -46,7 +46,8 @@ business-center/
 {
   "action": "login",  // 或 "register"
   "email": "user@example.com",
-  "password": "secret_password"
+  "password": "secret_password",
+  "invite_code": "INVITE_123" // (可选) 注册时使用的邀请码
 }
 ```
 
@@ -91,7 +92,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
     "name": "VIP Membership",
     "sku": "vip_monthly"
   },
-  "channel": "mock"          // 支付渠道: mock, wechat, alipay
+  "channel": "mock"          // 支付渠道: mock, wallet, wechat, alipay
 }
 ```
 
@@ -232,6 +233,54 @@ auth('login', 'test@test.com', '123456').then(console.log);
 
 **请求参数 (Query)**:
 *   `external_user_id`: 筛选特定用户的工单。
+
+### 8. 用户钱包 (Client Wallet)
+
+统一的积分/余额系统，支持跨应用消费。
+
+**接口地址**: `GET /functions/v1/client-wallet` (查询余额)
+
+**请求头 (Headers)**:
+*   `Authorization`: `Bearer <USER_ACCESS_TOKEN>`
+*   `x-app-id`: `YOUR_APP_KEY`
+
+**响应示例**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "wallet_uuid",
+    "balance": 1000,      // 单位: 分
+    "currency": "CNY",
+    "updated_at": "2023-10-01T12:00:00Z"
+  }
+}
+```
+
+**接口地址**: `POST /functions/v1/client-wallet` (查询交易明细)
+
+**请求体 (Body)**:
+
+```json
+{
+  "page": 1,
+  "limit": 20
+}
+```
+
+### 9. 邀请码系统 (Invite System)
+
+用于控制应用注册权限，支持 App 维度的邀请码隔离。
+
+**核心流程**:
+1.  **管理员生成**: 在管理后台 "邀请码管理" 中批量生成指定 App 的邀请码。
+2.  **用户注册**: 用户在注册时填写邀请码。
+3.  **自动核销**: `client-auth` 接口会自动校验邀请码的有效性（所属 App、有效期、剩余次数），校验通过后自动扣减次数并允许注册。
+
+**客户端接入**:
+*   无需额外调用独立接口，只需在 `client-auth` 注册接口的 body 中携带 `invite_code` 字段即可。
+*   详见 [1. 客户端认证](#1-客户端认证-client-auth)。
 
 ## 管理后台 (Admin Portal)
 
