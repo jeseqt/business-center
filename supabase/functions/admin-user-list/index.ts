@@ -21,17 +21,27 @@ serve(async (req) => {
     if (!authHeader) throw new Error('No authorization header');
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) throw new Error('Unauthorized');
+    
+    if (authError || !user) {
+      console.error('Auth failed:', authError);
+      throw new Error('Unauthorized: ' + (authError?.message || 'Invalid token'));
+    }
 
     // Admin Check
-    const { data: adminProfile } = await supabase
+    const { data: adminProfile, error: adminError } = await supabase
       .from('platform_admin_profiles')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (!adminProfile) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (adminError || !adminProfile) {
+      console.error('Admin check failed for user:', user.id, adminError);
+      return new Response(JSON.stringify({ 
+        error: 'Forbidden',
+        message: 'User is not an admin',
+        user_id: user.id,
+        debug_error: adminError
+      }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Parse query params
@@ -39,14 +49,17 @@ serve(async (req) => {
     const page = parseInt(url.searchParams.get('page') || '1');
     const pageSize = parseInt(url.searchParams.get('pageSize') || '20');
     const appId = url.searchParams.get('app_id');
-    const email = url.searchParams.get('email'); // Search in metadata
+    const keyword = url.searchParams.get('keyword'); // Generic search
 
     let query = supabase
       .from('platform_users')
       .select('*, platform_apps(name), platform_wallets(id, balance_permanent, balance_temporary)', { count: 'exact' });
 
     if (appId) query = query.eq('app_id', appId);
-    if (email) query = query.ilike('metadata->>email', `%${email}%`);
+    if (keyword) {
+      // Search in external_user_id OR email (in metadata) OR name (in metadata)
+      query = query.or(`external_user_id.ilike.%${keyword}%,metadata->>email.ilike.%${keyword}%,metadata->>name.ilike.%${keyword}%`);
+    }
 
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;

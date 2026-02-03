@@ -4,7 +4,9 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
-import { Copy, Plus, RefreshCw, Calendar, Hash } from 'lucide-react';
+import { PageHeader } from '../components/PageHeader';
+import { Card } from '../components/Card';
+import { Copy, Plus, RefreshCw, Hash, Ticket } from 'lucide-react';
 
 interface InviteCode {
   id: string;
@@ -33,11 +35,32 @@ export default function InviteManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke(`admin-invite-manage?page=${page}`, {
-        method: 'GET'
+      const { data: { session } } = await supabase.auth.getSession();
+      console.log('Supabase Config:', {
+        url: supabase.supabaseUrl, // This property might not be exposed directly on client, checking clientUrl instead
       });
-      if (error) throw error;
+      console.log('Session Token:', session?.access_token ? session.access_token.substring(0, 20) + '...' : 'No token');
+      
+      const { data, error } = await supabase.functions.invoke(`admin-invite-manage?page=${page}`, {
+        method: 'GET',
+        headers: {
+           // Explicitly send the token to be sure, though invoke does it automatically
+           Authorization: `Bearer ${session?.access_token}`
+        }
+      });
+      if (error) {
+        // 尝试解析错误详情
+        if (error instanceof  Error && 'context' in error) {
+            const res = (error as any).context as Response;
+            if (res && res.json) {
+                const body = await res.json();
+                console.error('Edge Function Error Body:', body);
+            }
+        }
+        throw error;
+      }
       setInvites(data.data || []);
+      // setTotalCount(data.count || 0);
     } catch (err) {
       console.error('Failed to load invites:', err);
     } finally {
@@ -49,16 +72,20 @@ export default function InviteManagement() {
     loadData();
   }, [page]);
 
-  const handleGenerate = async (e: React.FormEvent) => {
+    const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     setActionLoading(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase.functions.invoke('admin-invite-manage', {
         body: {
           app_id: genAppId,
           count: genCount,
           valid_days: genValidDays,
           max_usage: genMaxUsage
+        },
+        headers: {
+          Authorization: `Bearer ${session?.access_token}`
         }
       });
       if (error) throw error;
@@ -89,29 +116,33 @@ export default function InviteManagement() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
-        <h2 className="text-lg font-medium text-gray-900">邀请码列表</h2>
-        <Button onClick={() => setIsModalOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          批量生成
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader 
+        title="邀请码管理" 
+        description="生成和管理应用邀请码，控制用户注册权限"
+        icon={Ticket}
+        action={
+          <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            批量生成
+          </Button>
+        }
+      />
 
-      <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 border-b text-gray-500">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-4 font-medium">邀请码 (Code)</th>
-                <th className="px-6 py-4 font-medium">应用 ID</th>
-                <th className="px-6 py-4 font-medium">使用情况</th>
-                <th className="px-6 py-4 font-medium">有效期</th>
-                <th className="px-6 py-4 font-medium">状态</th>
-                <th className="px-6 py-4 font-medium text-right">操作</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邀请码 (Code)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用 ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用情况</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">有效期</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
@@ -131,7 +162,7 @@ export default function InviteManagement() {
                 <tr key={invite.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2 group">
-                      <code className="bg-gray-100 px-2 py-1 rounded text-indigo-600 font-mono font-bold border border-gray-200">
+                      <code className="bg-gray-100 px-2 py-1 rounded text-indigo-600 font-mono font-bold border border-gray-200 text-sm">
                         {invite.code}
                       </code>
                       <button 
@@ -167,10 +198,10 @@ export default function InviteManagement() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(invite)}
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <Button 
                       size="sm" 
                       variant="ghost" 
@@ -186,8 +217,8 @@ export default function InviteManagement() {
           </table>
         </div>
 
-        <div className="border-t p-4 flex items-center justify-between bg-gray-50">
-          <div className="text-xs text-gray-500">
+        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+          <div className="text-sm text-gray-500">
             显示第 {page} 页数据
           </div>
           <div className="flex gap-2">
@@ -209,7 +240,7 @@ export default function InviteManagement() {
             </Button>
           </div>
         </div>
-      </div>
+      </Card>
 
       <Modal
         isOpen={isModalOpen}

@@ -4,7 +4,9 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
-import { Plus, Copy, RefreshCw, Layers, Key } from 'lucide-react';
+import { PageHeader } from '../components/PageHeader';
+import { Card } from '../components/Card';
+import { Plus, Copy, RefreshCw, Layers } from 'lucide-react';
 
 interface AppData {
   id: string;
@@ -80,32 +82,28 @@ export default function AppManagement() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Header Actions */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
-        <div className="flex items-center gap-3">
-            <div className="bg-blue-100 p-2 rounded-lg">
-                <Layers className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-                <h2 className="text-lg font-medium text-gray-900">应用接入管理</h2>
-                <p className="text-xs text-gray-500">管理接入中台的业务应用及密钥</p>
-            </div>
-        </div>
-        <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          接入新应用
-        </Button>
-      </div>
+      <PageHeader 
+        title="应用接入管理" 
+        description="管理接入中台的业务应用及密钥"
+        icon={Layers}
+        action={
+          <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            接入新应用
+          </Button>
+        }
+      />
 
       {/* App List */}
-      <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+      <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用名称</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">App ID (Key)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用 ID (Key)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
@@ -131,7 +129,9 @@ export default function AppManagement() {
                         {app.app_key}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                        <Badge variant={app.status === 'active' ? 'success' : 'secondary'}>{app.status}</Badge>
+                        <Badge variant={app.status === 'active' ? 'success' : 'secondary'}>
+                          {app.status === 'active' ? '已启用' : '已停用'}
+                        </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(app.created_at).toLocaleString()}
@@ -147,7 +147,7 @@ export default function AppManagement() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
 
       {/* Create Modal */}
       <Modal
@@ -201,7 +201,7 @@ export default function AppManagement() {
 
             <div className="space-y-3">
                 <div>
-                    <label className="block text-xs font-medium text-gray-500 uppercase">App ID</label>
+                    <label className="block text-xs font-medium text-gray-500 uppercase">应用 ID (App ID)</label>
                     <div className="mt-1 flex rounded-md shadow-sm">
                         <code className="flex-1 block w-full rounded-none rounded-l-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-mono text-gray-900">
                             {newAppResult?.app_key}
@@ -217,7 +217,7 @@ export default function AppManagement() {
                 </div>
 
                 <div>
-                    <label className="block text-xs font-medium text-gray-500 uppercase">App Secret</label>
+                    <label className="block text-xs font-medium text-gray-500 uppercase">应用密钥 (App Secret)</label>
                     <div className="mt-1 flex rounded-md shadow-sm">
                         <code className="flex-1 block w-full rounded-none rounded-l-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-mono text-green-700 break-all">
                             {newAppResult?.app_secret}

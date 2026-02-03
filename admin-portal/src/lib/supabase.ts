@@ -15,7 +15,12 @@ try {
   // 使用假值防止 createClient 在初始化时崩溃
   const clientUrl = isConfigured ? supabaseUrl : 'https://placeholder.supabase.co'
   const clientKey = isConfigured ? supabaseAnonKey : 'placeholder-key'
-  client = createClient(clientUrl, clientKey)
+  client = createClient(clientUrl, clientKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  })
 } catch (error) {
   console.error('Supabase client initialization failed:', error)
   // 发生错误时使用占位符初始化，防止应用白屏崩溃

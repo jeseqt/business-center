@@ -24,11 +24,26 @@ serve(async (req) => {
 
     // Auth & Admin Check
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Unauthorized');
-    const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!user) throw new Error('Unauthorized');
-    const { data: admin } = await supabase.from('platform_admin_profiles').select('id').eq('id', user.id).single();
-    if (!admin) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!authHeader) throw new Error('Unauthorized: No auth header');
+    
+    const { data: { user }, error: userError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (userError || !user) {
+      console.error('User Auth Failed:', userError);
+      throw new Error('Unauthorized: ' + (userError?.message || 'Invalid token'));
+    }
+
+    console.log(`Checking admin privileges for user: ${user.id}`);
+    const { data: admin, error: adminError } = await supabase.from('platform_admin_profiles').select('id').eq('id', user.id).single();
+    
+    if (adminError || !admin) {
+      console.error('Admin check failed:', adminError);
+      return new Response(JSON.stringify({ 
+        error: 'Forbidden', 
+        message: 'User is not in admin group',
+        user_id: user.id,
+        debug_error: adminError
+      }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (req.method === 'GET') {
       const url = new URL(req.url);

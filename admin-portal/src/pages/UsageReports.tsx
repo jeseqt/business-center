@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { PageHeader } from '../components/PageHeader';
+import { Card } from '../components/Card';
 import { Activity, DollarSign, Database, Calendar } from 'lucide-react';
 
 interface UsageRecord {
@@ -67,17 +69,27 @@ export default function UsageReports() {
   const processStats = (data: UsageRecord[]) => {
     let total = 0;
     const appMap = new Map<string, AppStat>();
+    const categoryMap = new Map<string, number>();
     const dateMap = new Map<string, DailyStat>();
 
     data.forEach(record => {
       total += record.cost_usd || 0;
 
       // Group by App
-      const appName = record.app?.name || 'Unknown App';
+      const appName = record.app?.name || '未知应用';
       const appStat = appMap.get(appName) || { name: appName, total_cost: 0, total_tokens: 0 };
       appStat.total_cost += record.cost_usd || 0;
       appStat.total_tokens += record.total_tokens || 0;
       appMap.set(appName, appStat);
+
+      // Group by Category (Simulated based on name keywords)
+      let category = '其他';
+      if (appName.includes('商城') || appName.includes('Shop') || appName.includes('电商')) category = '电商应用';
+      else if (appName.includes('Chat') || appName.includes('AI') || appName.includes('Bot')) category = 'AI 对话';
+      else if (appName.includes('Tool') || appName.includes('工具')) category = '工具类';
+      else if (appName.includes('Game') || appName.includes('游戏')) category = '游戏娱乐';
+      
+      categoryMap.set(category, (categoryMap.get(category) || 0) + (record.cost_usd || 0));
 
       // Group by Date
       const date = new Date(record.created_at).toLocaleDateString();
@@ -89,6 +101,7 @@ export default function UsageReports() {
 
     setTotalCost(total);
     setAppStats(Array.from(appMap.values()));
+    setCategoryStats(Array.from(categoryMap.entries()).map(([name, value]) => ({ name, value })));
     // Sort daily stats by date
     setDailyStats(Array.from(dateMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   };
@@ -100,28 +113,24 @@ export default function UsageReports() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
-        <div className="flex items-center gap-3">
-            <div className="bg-purple-100 p-2 rounded-lg">
-                <Activity className="h-5 w-5 text-purple-600" />
-            </div>
-            <div>
-                <h2 className="text-lg font-medium text-gray-900">业务用量报表</h2>
-                <p className="text-xs text-gray-500">查看各应用 Token 消耗与成本趋势</p>
-            </div>
-        </div>
-        <div className="text-right">
-           <div className="text-sm text-gray-500">总预估成本</div>
-           <div className="text-2xl font-bold text-gray-900">${totalCost.toFixed(4)}</div>
-        </div>
-      </div>
+      <PageHeader 
+        title="业务用量报表" 
+        description="查看各应用 Token 消耗与成本趋势"
+        icon={Activity}
+        action={
+          <div className="text-right">
+             <div className="text-sm text-gray-500">总预估成本</div>
+             <div className="text-2xl font-bold text-indigo-600">${totalCost.toFixed(4)}</div>
+          </div>
+        }
+      />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Cost by App */}
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <Card>
           <h3 className="text-sm font-medium text-gray-700 mb-4 flex items-center gap-2">
-            <Database className="h-4 w-4" />
+            <Database className="h-4 w-4 text-indigo-500" />
             各应用成本分布 (USD)
           </h3>
           <div className="h-64">
@@ -132,16 +141,16 @@ export default function UsageReports() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="total_cost" name="成本 ($)" fill="#8884d8" />
+                <Bar dataKey="total_cost" name="成本 ($)" fill="#6366f1" />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
         {/* Daily Trend */}
-        <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <Card>
           <h3 className="text-sm font-medium text-gray-700 mb-4 flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
+            <Calendar className="h-4 w-4 text-indigo-500" />
             每日消耗趋势 (Tokens)
           </h3>
           <div className="h-64">
@@ -152,17 +161,17 @@ export default function UsageReports() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="tokens" name="Tokens" stroke="#82ca9d" />
+                <Line type="monotone" dataKey="tokens" name="Tokens" stroke="#10b981" />
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Recent Logs Table */}
-      <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b bg-gray-50">
-          <h3 className="text-sm font-medium text-gray-700">最近 100 条调用记录</h3>
+      <Card className="overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h3 className="text-lg font-medium text-gray-900">最近 100 条调用记录</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -182,10 +191,10 @@ export default function UsageReports() {
                     {new Date(log.created_at).toLocaleString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {log.app?.name || 'Unknown'}
+                    {log.app?.name || '未知'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-indigo-50 text-indigo-700">
                       {log.model_name}
                     </span>
                   </td>
@@ -200,7 +209,7 @@ export default function UsageReports() {
             </tbody>
           </table>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

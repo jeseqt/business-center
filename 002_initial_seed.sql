@@ -21,8 +21,10 @@ on conflict (app_key) do nothing;
 
 -- 2. 设置当前执行用户为超级管理员 (可选)
 -- 请将下面的 UUID 替换为您在 auth.users 表中的实际 ID
--- insert into public.platform_admin_profiles (id, display_name, role)
--- values ('YOUR_USER_ID_HERE', 'Super Admin', 'super_admin');
+-- IMPORTANT: Replace 'YOUR_USER_ID_HERE' with your actual Supabase Auth User ID
+-- You can find this in the Authentication -> Users section of your Supabase Dashboard
+insert into public.platform_admin_profiles (id, display_name, role)
+values ('YOUR_USER_ID_HERE', 'Super Admin', 'super_admin');
 
 -- 3. 插入一些演示用的计费数据 (可选)
 do $$
