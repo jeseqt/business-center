@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifySignature } from './crypto.ts';
 
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,22 +12,21 @@ export interface AppContext {
   app_secret_hash: string;
 }
 
+export interface VerifyAppOptions {
+  requireSignature?: boolean;
+}
+
 // 验证请求签名
 // 签名算法: HMAC_SHA256( body_string + timestamp, app_secret )
-// 注意：由于我们在数据库中只存储了 hash 过的 secret，实际生产环境中通常有两种做法：
-// 1. 中台存明文 Secret (风险高)
-// 2. 中台存 Hash，客户端传明文 Secret (风险高，等于密码明文传输)
-// 3. 双方约定 Shared Secret。
-// 
-// 鉴于当前设计中 `platform_apps` 存的是 `app_secret_hash`，我们这里做一个折衷方案用于演示：
-// 方案：简单验证 `x-app-id` 是否存在且状态为 active。
-// *正式生产环境建议*：在 Redis 或内存缓存中存储 App Secret 用于验签，或者数据库存储加密后的 Secret 并可解密。
-// 
-// 为了不修改现有表结构，且保证演示流畅性，我们目前暂只校验 AppKey 的有效性。
-// 如果用户之前保存了 Secret，我们可以假设后续会升级为真实签名校验。
-
-export async function verifyApp(req: Request, supabaseClient: any): Promise<AppContext> {
+export async function verifyApp(
+  req: Request, 
+  supabaseClient: any, 
+  options: VerifyAppOptions = {}
+): Promise<AppContext> {
+  const { requireSignature = false } = options;
   const appKey = req.headers.get('x-app-id');
+  const signature = req.headers.get('x-sign');
+  const timestamp = req.headers.get('x-timestamp');
   
   if (!appKey) {
     throw new Error('Missing x-app-id header');
@@ -35,7 +35,7 @@ export async function verifyApp(req: Request, supabaseClient: any): Promise<AppC
   // 查询应用信息
   const { data: app, error } = await supabaseClient
     .from('platform_apps')
-    .select('id, app_key, status, app_secret_hash')
+    .select('id, app_key, status, app_secret_hash, app_secret')
     .eq('app_key', appKey)
     .single();
 
@@ -45,6 +45,42 @@ export async function verifyApp(req: Request, supabaseClient: any): Promise<AppC
 
   if (app.status !== 'active') {
     throw new Error('App is not active');
+  }
+
+  // 签名校验逻辑
+  if (requireSignature) {
+    if (!signature || !timestamp) {
+      throw new Error('Missing signature headers (x-sign, x-timestamp)');
+    }
+  }
+
+  // 如果存在签名头，总是尝试校验（即使 requireSignature=false）
+  // 这样可以允许客户端自愿提供签名来增加安全性
+  if (signature && timestamp) {
+    // 1. 验证时间戳 (5分钟内有效)
+    const now = Date.now();
+    const reqTime = parseInt(timestamp);
+    if (isNaN(reqTime) || Math.abs(now - reqTime) > 5 * 60 * 1000) {
+       throw new Error('Request expired');
+    }
+
+    if (!app.app_secret) {
+        console.warn(`App ${appKey} has no secret stored. Cannot verify signature.`);
+        // 如果强制要求签名，但服务端没 Secret，必须报错
+        if (requireSignature) {
+           throw new Error('Server configuration error: missing app secret');
+        }
+    } else {
+        // 2. 读取 Body 用于验签
+        const reqClone = req.clone();
+        const bodyText = await reqClone.text();
+        const payload = bodyText + timestamp;
+
+        const isValid = await verifySignature(app.app_secret, payload, signature);
+        if (!isValid) {
+            throw new Error('Invalid Signature');
+        }
+    }
   }
 
   return {

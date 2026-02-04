@@ -10,7 +10,7 @@ serve(async (req) => {
     const supabase = createSupabaseClient();
 
     // 1. Verify App
-    const appContext = await verifyApp(req, supabase);
+    const appContext = await verifyApp(req, supabase, { requireSignature: true });
     const { app_id } = appContext;
 
     // 2. Authenticate User (Bearer Token)

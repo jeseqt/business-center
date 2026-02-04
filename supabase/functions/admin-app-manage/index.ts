@@ -66,6 +66,7 @@ serve(async (req) => {
           description,
           app_key,
           app_secret_hash,
+          app_secret, // Store secret for signature verification
           status: 'active'
         })
         .select()
@@ -96,7 +97,10 @@ serve(async (req) => {
          
          const { data, error } = await supabase
            .from('platform_apps')
-           .update({ app_secret_hash: new_hash })
+           .update({ 
+             app_secret_hash: new_hash,
+             app_secret: new_secret // Update stored secret
+           })
            .eq('id', app_id)
            .select()
            .single();

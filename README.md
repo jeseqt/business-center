@@ -73,6 +73,43 @@ async function auth(action, email, password) {
 auth('login', 'test@test.com', '123456').then(console.log);
 ```
 
+### 1.0 安全认证机制 (Security & Signature)
+
+为了保证数据安全，部分敏感接口（如用量上报、钱包查询、服务端验证）需要进行请求签名。
+
+**签名算法**: `HMAC-SHA256( body_string + timestamp, app_secret )`
+
+**必需 Headers**:
+*   `x-app-id`: 应用 Key
+*   `x-timestamp`: 当前时间戳 (毫秒)
+*   `x-sign`: 计算出的签名 (Hex String)
+
+**需要签名的接口**:
+*   `POST /functions/v1/report-usage`
+*   `POST /functions/v1/client-wallet`
+*   `POST /functions/v1/api-verify-invite` (Server-to-Server)
+
+**不需要签名的接口 (公开)**:
+*   `POST /functions/v1/client-auth` (登录/注册)
+*   `POST /functions/v1/create-payment` (依赖 User Token)
+*   `GET /functions/v1/fetch-config`
+
+### 1.1 独立验证邀请码 (Verify Invite)
+
+如果业务流程需要先验证邀请码有效性再进行注册，可以使用此接口。通常情况直接使用 `client-auth` 注册即可。
+
+**接口地址**: `POST /functions/v1/api-verify-invite`
+
+**请求体 (Body)**:
+
+```json
+{
+  "app_id": "YOUR_APP_KEY",
+  "code": "INVITE_123",
+  "external_user_id": "uid_123" // 需先确保用户已存在于平台，否则请直接走注册流程
+}
+```
+
 ### 2. 统一支付 (Create Payment)
 
 为所有 APP 提供统一的收银台能力。

@@ -10,7 +10,7 @@ serve(async (req) => {
     const supabase = createSupabaseClient();
 
     // 1. Verify App (Middleware) - optional but good for tracking
-    const appContext = await verifyApp(req, supabase);
+    const appContext = await verifyApp(req, supabase, { requireSignature: true });
     
     // 2. Authenticate User
     const authHeader = req.headers.get('Authorization');
