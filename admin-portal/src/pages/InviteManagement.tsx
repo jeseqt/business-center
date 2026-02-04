@@ -36,17 +36,16 @@ export default function InviteManagement() {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      console.log('Supabase Config:', {
-        url: supabase.supabaseUrl, // This property might not be exposed directly on client, checking clientUrl instead
-      });
-      console.log('Session Token:', session?.access_token ? session.access_token.substring(0, 20) + '...' : 'No token');
       
+      // 强制使用 error 打印，确保在控制台可见
+      // console.error('=== DEBUG INFO ===');
+      // console.error('Supabase URL:', supabase.supabaseUrl);
+      // console.error('Token Prefix:', session?.access_token ? session.access_token.substring(0, 20) + '...' : 'NO TOKEN');
+      // console.error('User ID:', session?.user?.id);
+      
+      // 原有调用
       const { data, error } = await supabase.functions.invoke(`admin-invite-manage?page=${page}`, {
-        method: 'GET',
-        headers: {
-           // Explicitly send the token to be sure, though invoke does it automatically
-           Authorization: `Bearer ${session?.access_token}`
-        }
+        method: 'GET'
       });
       if (error) {
         // 尝试解析错误详情
@@ -55,6 +54,17 @@ export default function InviteManagement() {
             if (res && res.json) {
                 const body = await res.json();
                 console.error('Edge Function Error Body:', body);
+                
+                // 直接在此处拦截 401 Invalid JWT
+                if (body?.code === 401 || body?.message === 'Invalid JWT') {
+                    console.error('Critical Auth Error detected in response body.');
+                    // 暂时注释掉强制登出，以便调试
+                    // await supabase.auth.signOut();
+                    // localStorage.clear();
+                    // sessionStorage.clear();
+                    // window.location.href = '/';
+                    // return; 
+                }
             }
         }
         throw error;
@@ -63,6 +73,26 @@ export default function InviteManagement() {
       // setTotalCount(data.count || 0);
     } catch (err) {
       console.error('Failed to load invites:', err);
+      // Auto logout on Invalid JWT or 401
+      if (JSON.stringify(err).includes('Invalid JWT') || (err as any)?.status === 401) {
+        console.error('Invalid Session detected. Token payload analysis:');
+        try {
+            const token = (await supabase.auth.getSession()).data.session?.access_token;
+            if (token) {
+                const parts = token.split('.');
+                if (parts.length === 3) {
+                    console.error('Header:', atob(parts[0]));
+                    console.error('Payload:', atob(parts[1]));
+                }
+            }
+        } catch (e) { console.error('Token analysis failed', e); }
+
+        console.warn('Force clearing session and storage...');
+        await supabase.auth.signOut();
+        localStorage.clear(); // 强制清除所有本地存储
+        sessionStorage.clear();
+        window.location.href = '/login'; // 强制跳转
+      }
     } finally {
       setLoading(false);
     }
@@ -83,9 +113,6 @@ export default function InviteManagement() {
           count: genCount,
           valid_days: genValidDays,
           max_usage: genMaxUsage
-        },
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`
         }
       });
       if (error) throw error;

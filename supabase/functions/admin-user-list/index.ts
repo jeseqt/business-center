@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,7 +24,10 @@ serve(async (req) => {
     
     if (authError || !user) {
       console.error('Auth failed:', authError);
-      throw new Error('Unauthorized: ' + (authError?.message || 'Invalid token'));
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized', message: authError?.message || 'Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Admin Check

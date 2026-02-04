@@ -17,9 +17,14 @@ serve(async (req) => {
 
     // Auth & Admin Check
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('Unauthorized');
-    const { data: { user } } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!user) throw new Error('Unauthorized');
+    if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Unauthorized', message: 'No authorization header' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) {
+        console.error('Auth failed:', authError);
+        return new Response(JSON.stringify({ error: 'Unauthorized', message: authError?.message || 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     const { data: admin } = await supabase.from('platform_admin_profiles').select('id').eq('id', user.id).single();
     if (!admin) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

@@ -76,6 +76,8 @@ function App() {
       <Routes>
         <Route path="/" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
         <Route path="/dashboard" element={session ? <Dashboard /> : <Navigate to="/" />} />
+        {/* Catch all - redirect to root */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

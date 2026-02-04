@@ -16,7 +16,7 @@ interface User {
     id: string;
     balance_permanent: number;
     balance_temporary: number;
-  }[];
+  } | null;
   metadata: any;
   created_at: string;
 }
@@ -47,24 +47,24 @@ export default function UserManagement() {
       }
 
       // Verify token validity with a lightweight auth check
-      const { error: authError } = await supabase.auth.getUser();
-      if (authError) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
         console.warn('Current session token is invalid (likely from previous project). Signing out...');
         await supabase.auth.signOut();
         window.location.reload(); // Force reload to clear any stale state
         return;
       }
 
-      console.log('UserManagement Session Token:', session.access_token ? 'Token exists' : 'No token');
+      // console.error('=== DEBUG INFO (UserManagement) ===');
+      // console.error('Supabase URL:', supabase.supabaseUrl);
+      // console.error('User ID:', user.id);
+      // console.error('Token Valid:', !!session.access_token);
 
       const params = new URLSearchParams({ page: page.toString() });
       if (emailFilter) params.append('email', emailFilter);
       
       const { data, error } = await supabase.functions.invoke(`admin-user-list?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${session?.access_token || ''}`
-        }
+        method: 'GET'
       });
       
       if (error) {
@@ -74,6 +74,17 @@ export default function UserManagement() {
             try {
                 const body = await res.json();
                 console.error('Edge Function Error Body:', body);
+
+                // 直接在此处拦截 401 Invalid JWT
+                if (body?.code === 401 || body?.message === 'Invalid JWT') {
+                    console.error('Critical Auth Error detected in response body.');
+                    // 暂时注释掉强制登出，以便调试
+                    // await supabase.auth.signOut();
+                    // localStorage.clear();
+                    // sessionStorage.clear();
+                    // window.location.href = '/';
+                    // return; 
+                }
             } catch (e) {
                 console.error('Error parsing error body:', e);
             }
@@ -84,6 +95,26 @@ export default function UserManagement() {
       setUsers(data.data || []);
     } catch (err) {
       console.error('Failed to load users:', err);
+      // Auto logout on Invalid JWT or 401
+      if (JSON.stringify(err).includes('Invalid JWT') || (err as any)?.status === 401) {
+        console.error('Invalid Session detected. Token payload analysis:');
+        try {
+            const token = (await supabase.auth.getSession()).data.session?.access_token;
+            if (token) {
+                const parts = token.split('.');
+                if (parts.length === 3) {
+                    console.error('Header:', atob(parts[0]));
+                    console.error('Payload:', atob(parts[1]));
+                }
+            }
+        } catch (e) { console.error('Token analysis failed', e); }
+
+        console.warn('Force clearing session and storage...');
+        await supabase.auth.signOut();
+        localStorage.clear(); // 强制清除所有本地存储
+        sessionStorage.clear();
+        window.location.href = '/login'; // 强制跳转
+      }
     } finally {
       setLoading(false);
     }
@@ -97,7 +128,7 @@ export default function UserManagement() {
     e.preventDefault();
     if (!selectedUser) return;
     
-    const walletId = selectedUser.platform_wallets[0]?.id;
+    const walletId = selectedUser.platform_wallets?.id;
     if (!walletId) {
       alert('该用户暂无钱包');
       return;
@@ -112,9 +143,6 @@ export default function UserManagement() {
           wallet_id: walletId,
           amount: adjustAmount,
           description: adjustReason
-        },
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`
         }
       });
 
@@ -209,16 +237,16 @@ export default function UserManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        {user.platform_wallets.length > 0 ? (
+                        {user.platform_wallets ? (
                           <>
                             <div className="flex items-center text-sm font-medium text-gray-900">
                               <Coins className="h-4 w-4 text-yellow-500 mr-1" />
-                              {user.platform_wallets[0].balance_permanent} (永久)
+                              {user.platform_wallets.balance_permanent} (永久)
                             </div>
-                            {user.platform_wallets[0].balance_temporary > 0 && (
+                            {user.platform_wallets.balance_temporary > 0 && (
                               <div className="flex items-center text-xs text-gray-500">
                                 <Clock className="h-3 w-3 mr-1" />
-                                +{user.platform_wallets[0].balance_temporary} (临时)
+                                +{user.platform_wallets.balance_temporary} (临时)
                               </div>
                             )}
                           </>
@@ -234,10 +262,10 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                       <Button variant="ghost" size="sm" onClick={() => setDetailUser(user)} className="mr-2">
+                       <Button variant="ghost" size="sm" onClick={() => console.log('Detail user:', user)} className="mr-2">
                          查看详情
                        </Button>
-                       {user.platform_wallets.length > 0 && (
+                       {user.platform_wallets && (
                          <Button variant="ghost" size="sm" onClick={() => openAdjustModal(user)}>
                            <Wallet className="h-4 w-4 text-indigo-600" />
                          </Button>
@@ -299,7 +327,7 @@ export default function UserManagement() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-500">当前余额:</span>
-              <span className="font-medium text-indigo-600">{selectedUser?.platform_wallets[0]?.balance_permanent ?? 0}</span>
+              <span className="font-medium text-indigo-600">{selectedUser?.platform_wallets?.balance_permanent ?? 0}</span>
             </div>
           </div>
 
