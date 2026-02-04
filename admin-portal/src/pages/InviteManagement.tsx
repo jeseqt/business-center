@@ -19,8 +19,14 @@ interface InviteCode {
   created_at: string;
 }
 
+interface App {
+  id: string;
+  name: string;
+}
+
 export default function InviteManagement() {
   const [invites, setInvites] = useState<InviteCode[]>([]);
+  const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,6 +37,15 @@ export default function InviteManagement() {
   const [genCount, setGenCount] = useState(1);
   const [genValidDays, setGenValidDays] = useState(30);
   const [genMaxUsage, setGenMaxUsage] = useState(1);
+
+  useEffect(() => {
+    fetchApps();
+  }, []);
+
+  const fetchApps = async () => {
+    const { data } = await supabase.from('platform_apps').select('id, name').order('created_at', { ascending: false });
+    if (data) setApps(data);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -285,13 +300,24 @@ export default function InviteManagement() {
         }
       >
         <div className="space-y-4">
-          <Input
-            label="目标应用 ID (App ID)"
-            value={genAppId}
-            onChange={(e) => setGenAppId(e.target.value)}
-            placeholder="请输入应用 UUID"
-            icon={<Hash className="h-4 w-4" />}
-          />
+          <div>
+            <label className="block text-sm font-medium leading-none mb-1 text-gray-700">目标应用 (Target App)</label>
+            <div className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                <Hash className="h-4 w-4" />
+              </div>
+              <select
+                value={genAppId}
+                onChange={(e) => setGenAppId(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-gray-200 bg-white px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500 pl-9"
+              >
+                <option value="">请选择应用...</option>
+                {apps.map(app => (
+                  <option key={app.id} value={app.id}>{app.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
           
           <div className="grid grid-cols-2 gap-4">
             <Input

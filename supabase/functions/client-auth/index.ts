@@ -16,7 +16,7 @@ serve(async (req) => {
 
     // 2. Parse Body
     const body = await req.json();
-    const { action, email, password, invite_code } = body;
+    const { action, email, password, invite_code, account } = body;
 
     if (!email || !password) {
       throw new Error('Email and password are required');
@@ -46,7 +46,11 @@ serve(async (req) => {
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email,
         password,
-        email_confirm: true // 自动确认邮箱，简化流程
+        email_confirm: true, // 自动确认邮箱，简化流程
+        user_metadata: {
+            account: account || email.split('@')[0], // 默认使用邮箱前缀作为账号
+            app_id: app_id
+        }
       });
 
       if (authError) throw authError;
@@ -59,13 +63,29 @@ serve(async (req) => {
         .insert({
           app_id: app_id,
           external_user_id: userId, // 这里我们直接用 Supabase User ID 作为外部 ID，方便关联
-          metadata: { email }
+          email: email,
+          account: account || email.split('@')[0],
+          metadata: { email, source: 'client_api' }
         });
         
       if (platformError) {
          // 回滚：如果业务表插入失败，最好删除 Auth 用户 (这里简化处理，仅报错)
          console.error('Platform user creation failed', platformError);
          throw new Error('User registration failed in platform');
+      }
+
+      // Initialize Wallet (Create default wallet for new user)
+      const { error: walletError } = await supabase
+        .from('platform_wallets')
+        .insert({
+            user_id: userId,
+            balance: 0,
+            currency: 'CNY'
+        });
+        
+      if (walletError) {
+          console.error('Failed to create wallet:', walletError);
+          // Non-blocking error, user is created
       }
 
       // Redeem Invite Code (if provided)

@@ -30,6 +30,33 @@ business-center/
 
 ## 核心能力与接入指南
 
+### 0. 通用数据结构规范
+
+**Metadata (元数据) 传输规范**
+
+为了在管理后台获得更好的展示效果（直接显示中文含义而非英文 Key），建议所有包含 `metadata` 类型字段的接口（如用户注册、用量上报）均采用以下结构传输：
+
+```json
+{
+  "key": {
+    "value": "actual_value",
+    "label": "字段中文名"
+  }
+}
+```
+
+**示例**:
+
+```json
+"metadata": {
+  "career": { "value": "entrepreneur", "label": "职业" },
+  "source": { "value": "app_store", "label": "注册来源" },
+  "is_vip": { "value": true, "label": "是否会员" }
+}
+```
+
+若不遵循此格式（仅传输普通键值对），管理后台将直接显示 Key。
+
 ### 1. 客户端认证 (Client Auth)
 
 所有接入中台的应用 (APP) 均通过此接口进行用户体系的统一管理。
@@ -47,7 +74,10 @@ business-center/
   "action": "login",  // 或 "register"
   "email": "user@example.com",
   "password": "secret_password",
-  "invite_code": "INVITE_123" // (可选) 注册时使用的邀请码
+  "invite_code": "INVITE_123", // (可选) 注册时使用的邀请码
+  "metadata": {                // (可选) 用户元数据，建议遵循上述 Metadata 规范
+    "career": { "value": "dev", "label": "职业" }
+  }
 }
 ```
 
@@ -73,11 +103,57 @@ async function auth(action, email, password) {
 auth('login', 'test@test.com', '123456').then(console.log);
 ```
 
-### 1.0 安全认证机制 (Security & Signature)
+### 2. 业务用量上报 (Report Usage)
 
-为了保证数据安全，部分敏感接口（如用量上报、钱包查询、服务端验证）需要进行请求签名。
+业务系统（如 AI 对话、语音合成等）在完成一次服务调用后，需调用此接口上报 Token 消耗，以便进行统一计费和审计。
+
+**接口地址**: `POST /functions/v1/report-usage`
+
+**请求头 (Headers)**:
+*   `Content-Type`: `application/json`
+*   `Authorization`: `Bearer <USER_ACCESS_TOKEN>` (登录接口返回的 access_token)
+*   `x-app-id`: `YOUR_APP_KEY`
+*   `x-timestamp`: 当前时间戳 (毫秒)
+*   `x-sign`: 签名字符串 (详见下文“安全认证机制”)
+
+**请求体 (Body)**:
+
+```json
+{
+  "model_name": "gpt-4o",       // 模型标识
+  "method_name": "chat",        // (可选) 方法名
+  "method_label": "对话生成",    // (可选) 中文解释，将在报表中显示
+  "prompt_tokens": 150,         // 输入 Token 数
+  "completion_tokens": 80,      // 输出 Token 数
+  "request_metadata": {         // (可选) 额外的业务元数据
+    "session_id": "sess_001",
+    "mode": "creative"
+  }
+}
+```
+
+**响应示例**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "usage_uuid...",
+    "cost_usd": 0.0025, // 本次调用计算后的成本
+    ...
+  }
+}
+```
+
+### 3. 安全认证机制 (Security & Signature)
+
+为了保证数据安全，部分敏感接口（如用量上报、钱包查询）需要进行请求签名。
 
 **签名算法**: `HMAC-SHA256( body_string + timestamp, app_secret )`
+
+1.  将 HTTP Request Body (JSON String) 与当前时间戳 (毫秒字符串) 拼接。
+2.  使用 `App Secret` (从管理后台获取) 作为密钥，计算 HMAC-SHA256 哈希值。
+3.  将哈希值转换为 Hex 字符串作为签名。
 
 **必需 Headers**:
 *   `x-app-id`: 应用 Key
@@ -94,7 +170,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 *   `POST /functions/v1/create-payment` (依赖 User Token)
 *   `GET /functions/v1/fetch-config`
 
-### 1.1 独立验证邀请码 (Verify Invite)
+### 4. 独立验证邀请码 (Verify Invite)
 
 如果业务流程需要先验证邀请码有效性再进行注册，可以使用此接口。通常情况直接使用 `client-auth` 注册即可。
 
@@ -110,7 +186,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 2. 统一支付 (Create Payment)
+### 5. 统一支付 (Create Payment)
 
 为所有 APP 提供统一的收银台能力。
 
@@ -133,30 +209,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 3. 业务用量上报 (Report Usage)
-
-用于 APP 上报用户的 AI 模型调用消耗 (Token) 或其他业务用量，便于平台进行统一计费与审计。
-
-**接口地址**: `POST /functions/v1/report-usage`
-
-**请求头 (Headers)**:
-*   `Authorization`: `Bearer <USER_ACCESS_TOKEN>`
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**请求体 (Body)**:
-
-```json
-{
-  "model_name": "gpt-4",    // 模型标识
-  "prompt_tokens": 150,     // 提问消耗
-  "completion_tokens": 80,  // 回答消耗
-  "request_metadata": {     // 业务透传字段
-    "conversation_id": "conv_123"
-  }
-}
-```
-
-### 4. 统一配置中心 (Fetch Config)
+### 6. 统一配置中心 (Fetch Config)
 
 用于获取 App 的动态配置，支持功能开关、UI 文案更新等，无需发版。
 
@@ -182,7 +235,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 5. 版本检查 (Check Version)
+### 7. 版本检查 (Check Version)
 
 检测 App 是否有新版本，支持强制更新逻辑。
 
@@ -213,7 +266,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 6. 通知中心 (Fetch Notifications)
+### 8. 通知中心 (Fetch Notifications)
 
 获取 App 的系统公告、活动消息等。
 
@@ -243,7 +296,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 7. 工单反馈 (Submit Ticket)
+### 9. 工单反馈 (Submit Ticket)
 
 允许 App 用户或游客提交问题反馈、Bug 报告。
 
@@ -271,7 +324,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 **请求参数 (Query)**:
 *   `external_user_id`: 筛选特定用户的工单。
 
-### 8. 用户钱包 (Client Wallet)
+### 10. 用户钱包 (Client Wallet)
 
 统一的积分/余额系统，支持跨应用消费。
 
@@ -306,7 +359,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 9. 邀请码系统 (Invite System)
+### 11. 邀请码系统 (Invite System)
 
 用于控制应用注册权限，支持 App 维度的邀请码隔离。
 

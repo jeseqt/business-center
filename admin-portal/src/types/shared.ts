@@ -21,6 +21,8 @@ export interface PlatformUser {
   id: string;
   app_id: string;
   external_user_id: string;
+  account?: string;
+  email?: string;
   metadata: Record<string, any>;
   status: 'active' | 'blocked';
   created_at: string;
@@ -32,6 +34,8 @@ export interface PlatformTokenUsage {
   app_id: string;
   platform_user_id: string | null;
   model_name: string;
+  method_name?: string;
+  method_label?: string;
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;

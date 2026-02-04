@@ -23,7 +23,6 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
-      console.error('Auth failed:', authError);
       return new Response(
         JSON.stringify({ error: 'Unauthorized', message: authError?.message || 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -38,12 +37,9 @@ serve(async (req) => {
       .single();
 
     if (adminError || !adminProfile) {
-      console.error('Admin check failed for user:', user.id, adminError);
       return new Response(JSON.stringify({ 
         error: 'Forbidden',
-        message: 'User is not an admin',
-        user_id: user.id,
-        debug_error: adminError
+        message: 'User is not an admin'
       }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -52,56 +48,30 @@ serve(async (req) => {
     const page = parseInt(url.searchParams.get('page') || '1');
     const pageSize = parseInt(url.searchParams.get('pageSize') || '20');
     const appId = url.searchParams.get('app_id');
-    const keyword = url.searchParams.get('keyword'); // Generic search
+    const status = url.searchParams.get('status');
+    const keyword = url.searchParams.get('keyword');
 
     let query = supabase
-      .from('platform_users')
-      .select('*, platform_apps(name)', { count: 'exact' });
+      .from('platform_orders')
+      .select('*, platform_apps(name), platform_users(metadata)', { count: 'exact' });
 
     if (appId) query = query.eq('app_id', appId);
+    if (status) query = query.eq('status', status);
     if (keyword) {
-      // Search in external_user_id OR email (in metadata) OR name (in metadata) OR account (new field) OR email (new field)
-      query = query.or(`external_user_id.ilike.%${keyword}%,account.ilike.%${keyword}%,email.ilike.%${keyword}%,metadata->>email.ilike.%${keyword}%,metadata->>name.ilike.%${keyword}%`);
+      query = query.or(`platform_order_no.ilike.%${keyword}%,merchant_order_no.ilike.%${keyword}%`);
     }
 
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
-    const { data: users, count, error } = await query
+    const { data: orders, count, error } = await query
       .range(from, to)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    // Fetch wallets for these users
-    let data = users;
-    if (users && users.length > 0) {
-        // platform_users.external_user_id corresponds to auth.users.id
-        // platform_wallets.user_id corresponds to auth.users.id
-        const userIds = users.map((u: any) => u.external_user_id).filter((id: string) => !!id);
-        
-        // Use global wallet table
-        const { data: wallets } = await supabase
-            .from('platform_wallets')
-            .select('id, balance, currency, user_id')
-            .in('user_id', userIds);
-            
-        // Merge wallet info
-        data = users.map((u: any) => {
-            const wallet = wallets?.find((w: any) => w.user_id === u.external_user_id);
-            return {
-                ...u,
-                platform_wallets: wallet ? {
-                    id: wallet.id,
-                    balance_permanent: wallet.balance, // Map new balance to old field name for frontend compatibility
-                    balance_temporary: 0
-                } : null
-            };
-        });
-    }
-
     return new Response(
-      JSON.stringify({ data, count, page, pageSize }),
+      JSON.stringify({ data: orders, count, page, pageSize }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {

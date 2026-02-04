@@ -11,6 +11,8 @@ interface User {
   id: string;
   app_id: string;
   external_user_id: string;
+  account?: string;
+  email?: string;
   platform_apps: { name: string };
   platform_wallets: {
     id: string;
@@ -23,16 +25,64 @@ interface User {
 
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
+  const [apps, setApps] = useState<{id: string, name: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
+  const [selectedAppId, setSelectedAppId] = useState('');
   
   // Wallet Adjustment State
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [adjustAmount, setAdjustAmount] = useState(0);
   const [adjustReason, setAdjustReason] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // User Creation State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newUser, setNewUser] = useState({
+    app_id: '',
+    email: '',
+    password: '',
+    account: ''
+  });
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    
+    try {
+      const { error } = await supabase.functions.invoke('admin-user-create', {
+        body: newUser
+      });
+
+      if (error) throw error;
+      
+      setIsCreateModalOpen(false);
+      setNewUser({ app_id: '', email: '', password: '', account: '' });
+      loadData();
+      alert('用户创建成功');
+    } catch (err: any) {
+      console.error(err);
+      alert('创建用户失败: ' + (err.message || '未知错误'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const loadApps = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('platform_apps')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      setApps(data || []);
+    } catch (err) {
+      console.error('Failed to load apps:', err);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -61,7 +111,8 @@ export default function UserManagement() {
       // console.error('Token Valid:', !!session.access_token);
 
       const params = new URLSearchParams({ page: page.toString() });
-      if (emailFilter) params.append('email', emailFilter);
+      if (emailFilter) params.append('keyword', emailFilter);
+      if (selectedAppId) params.append('app_id', selectedAppId);
       
       const { data, error } = await supabase.functions.invoke(`admin-user-list?${params.toString()}`, {
         method: 'GET'
@@ -121,8 +172,12 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
+    loadApps();
+  }, []);
+
+  useEffect(() => {
     loadData();
-  }, [page]);
+  }, [page, selectedAppId]);
 
   const handleAdjustWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,6 +221,11 @@ export default function UserManagement() {
     setIsModalOpen(true);
   };
 
+  const openDetailModal = (user: User) => {
+    setSelectedUser(user);
+    setIsDetailModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -173,7 +233,23 @@ export default function UserManagement() {
         description="查看应用用户、管理钱包余额及交易"
         icon={UserIcon}
         action={
-          <div className="flex gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+             <Button onClick={() => setIsCreateModalOpen(true)}>
+               创建新用户
+             </Button>
+             <select
+               className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+               value={selectedAppId}
+               onChange={(e) => {
+                 setSelectedAppId(e.target.value);
+                 setPage(1);
+               }}
+             >
+               <option value="">所有应用</option>
+               {apps.map(app => (
+                 <option key={app.id} value={app.id}>{app.name}</option>
+               ))}
+             </select>
              <div className="relative flex-1 sm:flex-initial">
                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                <input
@@ -197,43 +273,42 @@ export default function UserManagement() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户 ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">账号</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">所属应用</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">钱包余额</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">余额 (永久/临时)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">注册时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
                     加载中...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-10 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-10 text-center text-gray-500">
                     暂无用户
                   </td>
                 </tr>
               ) : (
                 users.map((user) => (
                   <tr key={user.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                          <UserIcon className="h-5 w-5 text-indigo-600" />
-                        </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{user.metadata?.email || '无邮箱'}</div>
-                          <div className="text-xs text-gray-500">ID: {user.external_user_id}</div>
-                        </div>
-                      </div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {user.external_user_id.slice(0, 8)}...
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{user.platform_apps?.name || '未知应用'}</div>
-                      <div className="text-xs text-gray-500">App ID: {user.app_id.substring(0, 8)}...</div>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {user.account ? <span className="font-medium text-gray-900">{user.account}</span> : <span className="text-gray-400">-</span>}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {user.email ? <span>{user.email}</span> : <span className="text-gray-400">-</span>}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {user.platform_apps?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
@@ -262,7 +337,7 @@ export default function UserManagement() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                       <Button variant="ghost" size="sm" onClick={() => console.log('Detail user:', user)} className="mr-2">
+                       <Button variant="ghost" size="sm" onClick={() => openDetailModal(user)} className="mr-2">
                          查看详情
                        </Button>
                        {user.platform_wallets && (
@@ -304,6 +379,68 @@ export default function UserManagement() {
         </div>
       </Card>
 
+      {/* Create User Modal */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="创建新用户"
+      >
+        <form onSubmit={handleCreateUser} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">所属应用</label>
+            <select
+              required
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              value={newUser.app_id}
+              onChange={(e) => setNewUser({ ...newUser, app_id: e.target.value })}
+            >
+              <option value="">请选择应用</option>
+              {apps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Input
+            label="账号 (可选)"
+            value={newUser.account}
+            onChange={(e) => setNewUser({ ...newUser, account: e.target.value })}
+            placeholder="请输入用户登录账号"
+          />
+          <Input
+            label="邮箱"
+            type="email"
+            required
+            value={newUser.email}
+            onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+            placeholder="请输入用户邮箱"
+          />
+          <Input
+            label="初始密码"
+            type="password"
+            required
+            value={newUser.password}
+            onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+            placeholder="设置初始登录密码 (至少 6 位)"
+            minLength={6}
+          />
+          <div className="flex justify-end gap-3 mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreateModalOpen(false)}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={actionLoading}>
+              {actionLoading ? '创建中...' : '确认创建'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Adjust Balance Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -350,6 +487,92 @@ export default function UserManagement() {
           <div className="text-xs text-gray-500 bg-yellow-50 p-3 rounded text-yellow-700 border border-yellow-100">
             ⚠️ 注意：此操作不可撤销，并将记录在资金流水中。
           </div>
+        </div>
+      </Modal>
+
+      {/* User Detail Modal */}
+      <Modal
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        title="用户详情"
+        footer={
+            <Button onClick={() => setIsDetailModalOpen(false)}>
+              关闭
+            </Button>
+        }
+      >
+        <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="col-span-2">
+                    <label className="block text-gray-500 mb-1">用户 ID</label>
+                    <div className="font-mono bg-gray-50 p-2 rounded break-all select-all">{selectedUser?.external_user_id}</div>
+                </div>
+                <div>
+                    <label className="block text-gray-500 mb-1">所属应用</label>
+                    <div className="font-medium p-2">{selectedUser?.platform_apps?.name}</div>
+                </div>
+                <div>
+                    <label className="block text-gray-500 mb-1">注册时间</label>
+                    <div className="p-2">{selectedUser?.created_at ? new Date(selectedUser.created_at).toLocaleString() : '-'}</div>
+                </div>
+                <div>
+                    <label className="block text-gray-500 mb-1">账号</label>
+                    <div className="p-2 select-all">{selectedUser?.account || '-'}</div>
+                </div>
+                <div>
+                    <label className="block text-gray-500 mb-1">邮箱</label>
+                    <div className="p-2 select-all">{selectedUser?.email || '-'}</div>
+                </div>
+            </div>
+
+            {selectedUser?.platform_wallets && (
+                <div className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                    <h4 className="text-indigo-900 font-medium mb-2 flex items-center gap-2">
+                        <Wallet className="h-4 w-4" /> 钱包信息
+                    </h4>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <span className="text-indigo-600 text-xs uppercase tracking-wider">永久余额</span>
+                            <div className="text-2xl font-bold text-indigo-700">{selectedUser.platform_wallets.balance_permanent}</div>
+                        </div>
+                        <div>
+                            <span className="text-indigo-600 text-xs uppercase tracking-wider">临时余额</span>
+                            <div className="text-2xl font-bold text-indigo-700">{selectedUser.platform_wallets.balance_temporary}</div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div>
+                <label className="block text-gray-500 mb-2">元数据 (Metadata)</label>
+                {!selectedUser?.metadata || Object.keys(selectedUser.metadata).length === 0 ? (
+                  <div className="text-gray-400 text-sm italic p-2 bg-gray-50 rounded">无元数据</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50 p-4 rounded-lg border border-gray-100">
+                    {Object.entries(selectedUser.metadata).map(([key, value]) => {
+                      // Check if value follows the { value: any, label: string } pattern
+                      const isLabeledValue = value && typeof value === 'object' && 'label' in value && 'value' in value;
+                      const displayKey = isLabeledValue ? (value as any).label : key;
+                      const displayValue = isLabeledValue ? (value as any).value : value;
+
+                      return (
+                        <div key={key} className="flex flex-col border-b border-gray-200 pb-2 last:border-0">
+                          <span className="text-xs text-gray-500 uppercase tracking-wider font-semibold mb-1">
+                            {displayKey}
+                            {isLabeledValue && <span className="ml-1 text-[10px] text-gray-400 font-normal">({key})</span>}
+                          </span>
+                          <span className="text-sm font-medium text-gray-900 break-all">
+                            {displayValue === null ? <span className="text-gray-400 italic">null</span> :
+                             typeof displayValue === 'boolean' ? (displayValue ? 'Yes' : 'No') :
+                             typeof displayValue === 'object' ? JSON.stringify(displayValue) :
+                             String(displayValue)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+            </div>
         </div>
       </Modal>
     </div>
