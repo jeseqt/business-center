@@ -23,9 +23,11 @@ interface User {
 
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
+  const [apps, setApps] = useState<{id: string, name: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [emailFilter, setEmailFilter] = useState('');
+  const [selectedAppId, setSelectedAppId] = useState('');
   
   // Wallet Adjustment State
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -33,6 +35,19 @@ export default function UserManagement() {
   const [adjustReason, setAdjustReason] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const loadApps = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('platform_apps')
+        .select('id, name')
+        .order('name');
+      if (error) throw error;
+      setApps(data || []);
+    } catch (err) {
+      console.error('Failed to load apps:', err);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -61,7 +76,8 @@ export default function UserManagement() {
       // console.error('Token Valid:', !!session.access_token);
 
       const params = new URLSearchParams({ page: page.toString() });
-      if (emailFilter) params.append('email', emailFilter);
+      if (emailFilter) params.append('keyword', emailFilter);
+      if (selectedAppId) params.append('app_id', selectedAppId);
       
       const { data, error } = await supabase.functions.invoke(`admin-user-list?${params.toString()}`, {
         method: 'GET'
@@ -121,8 +137,12 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
+    loadApps();
+  }, []);
+
+  useEffect(() => {
     loadData();
-  }, [page]);
+  }, [page, selectedAppId]);
 
   const handleAdjustWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -173,7 +193,20 @@ export default function UserManagement() {
         description="查看应用用户、管理钱包余额及交易"
         icon={UserIcon}
         action={
-          <div className="flex gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+             <select
+               className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+               value={selectedAppId}
+               onChange={(e) => {
+                 setSelectedAppId(e.target.value);
+                 setPage(1);
+               }}
+             >
+               <option value="">所有应用</option>
+               {apps.map(app => (
+                 <option key={app.id} value={app.id}>{app.name}</option>
+               ))}
+             </select>
              <div className="relative flex-1 sm:flex-initial">
                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                <input

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import UserManagement from './UserManagement';
+import OrderManagement from './OrderManagement';
 import InviteManagement from './InviteManagement';
 import AppManagement from './AppManagement';
 import UsageReports from './UsageReports';
@@ -10,11 +11,11 @@ import ConfigManagement from './ConfigManagement';
 import VersionManagement from './VersionManagement';
 import NotificationManagement from './NotificationManagement';
 import TicketManagement from './TicketManagement';
-import { Users, Ticket, LogOut, LayoutDashboard, Menu, Layers, BarChart3, Settings, GitBranch, Bell, MessageSquare } from 'lucide-react';
+import { Users, CreditCard, Ticket, LogOut, LayoutDashboard, Menu, Layers, BarChart3, Settings, GitBranch, Bell, MessageSquare } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets'>('apps');
+  const [activeTab, setActiveTab] = useState<'users' | 'orders' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets'>('apps');
   const [isSidebarOpen, setSidebarOpen] = useState(true);
 
   const handleLogout = async () => {
@@ -29,7 +30,8 @@ export default function Dashboard() {
     { id: 'notifications', label: '通知中心', icon: Bell },
     { id: 'tickets', label: '工单系统', icon: MessageSquare },
     { id: 'reports', label: '业务用量报表', icon: BarChart3 },
-    { id: 'users', label: '用户与钱包', icon: Users },
+    { id: 'users', label: '用户管理', icon: Users },
+    { id: 'orders', label: '财务订单流水', icon: CreditCard },
     { id: 'invites', label: '邀请码管理', icon: Ticket },
   ] as const;
 
@@ -102,6 +104,7 @@ export default function Dashboard() {
         <main className="flex-1 overflow-auto p-4 sm:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
             {activeTab === 'users' && <UserManagement />}
+            {activeTab === 'orders' && <OrderManagement />}
             {activeTab === 'invites' && <InviteManagement />}
             {activeTab === 'apps' && <AppManagement />}
             {activeTab === 'reports' && <UsageReports />}
