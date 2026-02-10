@@ -39,37 +39,14 @@ export default function UserManagement() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // User Creation State
+  // Create User State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newUser, setNewUser] = useState({
     app_id: '',
+    account: '',
     email: '',
-    password: '',
-    account: ''
+    password: ''
   });
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setActionLoading(true);
-    
-    try {
-      const { error } = await supabase.functions.invoke('admin-user-create', {
-        body: newUser
-      });
-
-      if (error) throw error;
-      
-      setIsCreateModalOpen(false);
-      setNewUser({ app_id: '', email: '', password: '', account: '' });
-      loadData();
-      alert('用户创建成功');
-    } catch (err: any) {
-      console.error(err);
-      alert('创建用户失败: ' + (err.message || '未知错误'));
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const loadApps = async () => {
     try {
@@ -179,6 +156,33 @@ export default function UserManagement() {
     loadData();
   }, [page, selectedAppId]);
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      const { error } = await supabase.functions.invoke('admin-user-create', {
+        body: newUser
+      });
+
+      if (error) throw error;
+      
+      setIsCreateModalOpen(false);
+      setNewUser({
+        app_id: '',
+        account: '',
+        email: '',
+        password: ''
+      });
+      loadData(); // Refresh list
+      alert('用户创建成功');
+    } catch (err) {
+      console.error('Failed to create user:', err);
+      alert('创建用户失败，请重试');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleAdjustWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedUser) return;
@@ -234,9 +238,6 @@ export default function UserManagement() {
         icon={UserIcon}
         action={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-             <Button onClick={() => setIsCreateModalOpen(true)}>
-               创建新用户
-             </Button>
              <select
                className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                value={selectedAppId}
@@ -263,6 +264,10 @@ export default function UserManagement() {
              </div>
              <Button onClick={() => setPage(1)}>
                搜索
+             </Button>
+             <Button variant="primary" onClick={() => setIsCreateModalOpen(true)}>
+               <UserIcon className="h-4 w-4 mr-2" />
+               新建用户
              </Button>
            </div>
         }
