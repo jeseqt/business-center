@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.7.1";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token',
 };
 
 serve(async (req) => {
@@ -17,9 +17,18 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Auth Check
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('No authorization header');
-    const token = authHeader.replace('Bearer ', '');
+    // Prioritize x-user-token if present (to bypass Gateway issues)
+    let token = req.headers.get('x-user-token');
+    
+    if (token) {
+        console.log('Using x-user-token for auth');
+    } else {
+        // Fallback to standard Authorization header
+        token = req.headers.get('Authorization')?.replace('Bearer ', '');
+    }
+
+    if (!token) throw new Error('No authorization token provided');
+
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user) {
@@ -76,9 +85,9 @@ serve(async (req) => {
     // Fetch wallets for these users
     let data = users;
     if (users && users.length > 0) {
-        // platform_users.external_user_id corresponds to auth.users.id
+        // platform_users.id corresponds to auth.users.id (after migration)
         // platform_wallets.user_id corresponds to auth.users.id
-        const userIds = users.map((u: any) => u.external_user_id).filter((id: string) => !!id);
+        const userIds = users.map((u: any) => u.id).filter((id: string) => !!id);
         
         // Use global wallet table
         const { data: wallets } = await supabase
@@ -88,7 +97,7 @@ serve(async (req) => {
             
         // Merge wallet info
         data = users.map((u: any) => {
-            const wallet = wallets?.find((w: any) => w.user_id === u.external_user_id);
+            const wallet = wallets?.find((w: any) => w.user_id === u.id);
             return {
                 ...u,
                 platform_wallets: wallet ? {

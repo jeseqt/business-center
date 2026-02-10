@@ -106,9 +106,9 @@ export default function OrderManagement() {
       </div>
 
       <Card className="p-4 flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full sm:w-auto">
           <select
-            className="px-4 py-2 border rounded-md text-sm bg-white"
+            className="px-4 py-2 border rounded-md text-sm bg-white w-full sm:w-auto"
             value={selectedAppId}
             onChange={(e) => { setSelectedAppId(e.target.value); setPage(1); }}
           >
@@ -118,7 +118,7 @@ export default function OrderManagement() {
 
           {activeTab === 'orders' ? (
             <select
-              className="px-4 py-2 border rounded-md text-sm bg-white"
+              className="px-4 py-2 border rounded-md text-sm bg-white w-full sm:w-auto"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             >
@@ -129,7 +129,7 @@ export default function OrderManagement() {
             </select>
           ) : (
             <select
-              className="px-4 py-2 border rounded-md text-sm bg-white"
+              className="px-4 py-2 border rounded-md text-sm bg-white w-full sm:w-auto"
               value={statusFilter}
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             >
@@ -140,19 +140,19 @@ export default function OrderManagement() {
             </select>
           )}
 
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
             <input
               type="text"
               placeholder="搜索单号..."
-              className="pl-10 pr-4 py-2 border rounded-md text-sm w-48"
+              className="pl-10 pr-4 py-2 border rounded-md text-sm w-full sm:w-48"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
             />
           </div>
         </div>
-        <Button onClick={() => setPage(1)}>刷新</Button>
+        <Button onClick={() => setPage(1)} className="w-full sm:w-auto">刷新</Button>
       </Card>
 
       <Card className="overflow-hidden">
@@ -162,18 +162,18 @@ export default function OrderManagement() {
               {activeTab === 'orders' ? (
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">订单号</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">应用</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">应用</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">时间</th>
                 </tr>
               ) : (
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">应用</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">应用</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额变动</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">时间</th>
                 </tr>
               )}
             </thead>
@@ -191,15 +191,15 @@ export default function OrderManagement() {
                           <div className="font-medium text-gray-900">{item.platform_order_no}</div>
                           <div className="text-xs text-gray-500">{item.merchant_order_no}</div>
                         </td>
-                        <td className="px-6 py-4">{item.platform_apps?.name}</td>
+                        <td className="px-6 py-4 hidden md:table-cell">{item.platform_apps?.name}</td>
                         <td className="px-6 py-4">{(item.amount / 100).toFixed(2)} {item.currency}</td>
                         <td className="px-6 py-4">{getStatusBadge(item.status)}</td>
-                        <td className="px-6 py-4 text-gray-500">{new Date(item.created_at).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">{new Date(item.created_at).toLocaleString()}</td>
                       </>
                     ) : (
                       <>
                         <td className="px-6 py-4 font-medium">{getStatusBadge(item.type)}</td>
-                        <td className="px-6 py-4">{item.platform_apps?.name || '-'}</td>
+                        <td className="px-6 py-4 hidden md:table-cell">{item.platform_apps?.name || '-'}</td>
                         <td className="px-6 py-4">
                           <span className={item.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
                             {item.amount >= 0 ? '+' : ''}{(item.amount / 100).toFixed(2)}
@@ -207,7 +207,7 @@ export default function OrderManagement() {
                           <div className="text-xs text-gray-400">余额: {(item.balance_after / 100).toFixed(2)}</div>
                         </td>
                         <td className="px-6 py-4 text-gray-600">{item.description}</td>
-                        <td className="px-6 py-4 text-gray-500">{new Date(item.created_at).toLocaleString()}</td>
+                        <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">{new Date(item.created_at).toLocaleString()}</td>
                       </>
                     )}
                   </tr>
@@ -216,9 +216,9 @@ export default function OrderManagement() {
             </tbody>
           </table>
         </div>
-        <div className="bg-gray-50 px-6 py-3 border-t flex justify-between items-center text-sm">
+        <div className="bg-gray-50 px-6 py-3 border-t flex flex-col sm:flex-row justify-between items-center text-sm gap-4">
           <span className="text-gray-500">第 {page} 页</span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto justify-center sm:justify-end">
             <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</Button>
             <Button variant="outline" size="sm" disabled={data.length < 20} onClick={() => setPage(p => p + 1)}>下一页</Button>
           </div>

@@ -103,9 +103,9 @@ export default function AppManagement() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用名称</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用 ID (Key)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">应用 ID (Key)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">创建时间</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">创建时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
@@ -125,7 +125,7 @@ export default function AppManagement() {
                       <div className="text-sm font-medium text-gray-900">{app.name}</div>
                       <div className="text-xs text-gray-500">{app.description || '-'}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-gray-600 hidden md:table-cell">
                         {app.app_key}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -133,7 +133,7 @@ export default function AppManagement() {
                           {app.status === 'active' ? '已启用' : '已停用'}
                         </Badge>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                       {new Date(app.created_at).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

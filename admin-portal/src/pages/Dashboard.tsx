@@ -16,7 +16,7 @@ import { Users, CreditCard, Ticket, LogOut, LayoutDashboard, Menu, Layers, BarCh
 export default function Dashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'users' | 'orders' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets'>('apps');
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -61,12 +61,22 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile Overlay */}
+        {isSidebarOpen && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-20 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
         <aside 
-          className={`bg-white border-r flex flex-col transition-all duration-300 ${
-            isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0 overflow-hidden'
-          }`}
+          className={`
+            bg-white border-r flex flex-col transition-all duration-300
+            fixed md:relative z-30 h-[calc(100vh-4rem)] md:h-auto top-16 md:top-0
+            ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full opacity-0 overflow-hidden'}
+          `}
         >
           <nav className="p-4 space-y-1">
             <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">

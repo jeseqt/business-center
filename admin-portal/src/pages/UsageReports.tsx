@@ -370,7 +370,7 @@ export default function UsageReports() {
               onChange={(e) => setFilters({...filters, date: e.target.value})}
             />
           </div>
-          <div className="flex-1 min-w-[200px]">
+          <div className="w-full md:w-auto md:flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">应用名称</label>
             <select
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white"
@@ -383,7 +383,7 @@ export default function UsageReports() {
               ))}
             </select>
           </div>
-          <div className="flex-1 min-w-[200px]">
+          <div className="w-full md:w-auto md:flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">用户 (ID/账号/邮箱)</label>
             <input
               type="text"
@@ -394,7 +394,7 @@ export default function UsageReports() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
-          <div className="flex-1 min-w-[150px]">
+          <div className="w-full md:w-auto md:flex-1 min-w-[150px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">方法/标签</label>
             <input
               type="text"
@@ -405,7 +405,7 @@ export default function UsageReports() {
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             />
           </div>
-          <div className="flex-1 min-w-[150px]">
+          <div className="w-full md:w-auto md:flex-1 min-w-[150px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">模型</label>
             <select
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border bg-white"
@@ -418,7 +418,7 @@ export default function UsageReports() {
               ))}
             </select>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full md:w-auto justify-end">
             <Button onClick={handleSearch} className="flex items-center gap-1" disabled={tableLoading}>
               <Search className="h-4 w-4" />
               {tableLoading ? '查询中...' : '查询'}
@@ -445,10 +445,10 @@ export default function UsageReports() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">时间</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">时间</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">模型/方法</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">模型/方法</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">成本</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider sticky right-0 bg-gray-50 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">操作</th>
@@ -457,7 +457,7 @@ export default function UsageReports() {
             <tbody className="bg-white divide-y divide-gray-200">
               {recentLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">
                     {new Date(log.created_at).toLocaleString()}
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -466,7 +466,7 @@ export default function UsageReports() {
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                      <div className="font-medium text-gray-900">{getUserDisplayName(log.platform_user)}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                     <div className="flex flex-col">
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-indigo-50 text-indigo-700 w-fit">
                         {log.model_name}

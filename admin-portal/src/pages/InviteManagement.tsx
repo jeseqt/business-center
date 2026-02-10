@@ -177,9 +177,9 @@ export default function InviteManagement() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邀请码 (Code)</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用 ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">应用 ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用情况</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">有效期</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">有效期</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
@@ -216,7 +216,7 @@ export default function InviteManagement() {
                       </button>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-xs font-mono text-gray-500">
+                  <td className="px-6 py-4 text-xs font-mono text-gray-500 hidden md:table-cell">
                     {invite.app_id}
                   </td>
                   <td className="px-6 py-4">
@@ -232,7 +232,7 @@ export default function InviteManagement() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 hidden lg:table-cell">
                     <div className="flex flex-col text-xs text-gray-500">
                       <span>{invite.valid_days} 天有效</span>
                       <span className="text-[10px] text-gray-400">
@@ -259,7 +259,7 @@ export default function InviteManagement() {
           </table>
         </div>
 
-        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-sm text-gray-500">
             显示第 {page} 页数据
           </div>
@@ -319,7 +319,7 @@ export default function InviteManagement() {
             </div>
           </div>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
               label="生成数量"
               type="number"

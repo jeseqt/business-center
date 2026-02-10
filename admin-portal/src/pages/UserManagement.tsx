@@ -5,7 +5,7 @@ import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Search, Wallet, Coins, Calendar, User as UserIcon, Clock } from 'lucide-react';
+import { Search, Wallet, Coins, Calendar, User as UserIcon, Clock, Lock, Unlock, Trash2, Eye } from 'lucide-react';
 
 interface User {
   id: string;
@@ -13,6 +13,7 @@ interface User {
   external_user_id: string;
   account?: string;
   email?: string;
+  status: 'active' | 'blocked';
   platform_apps: { name: string };
   platform_wallets: {
     id: string;
@@ -91,8 +92,16 @@ export default function UserManagement() {
       if (emailFilter) params.append('keyword', emailFilter);
       if (selectedAppId) params.append('app_id', selectedAppId);
       
+      // Workaround for Supabase Gateway 401 Invalid JWT error:
+      // Pass the user token in a custom header (x-user-token)
+      // and reset Authorization to the Anon Key (which is always valid for the Gateway).
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       const { data, error } = await supabase.functions.invoke(`admin-user-list?${params.toString()}`, {
-        method: 'GET'
+        method: 'GET',
+        headers: {
+            Authorization: `Bearer ${anonKey}`,
+            'x-user-token': session.access_token
+        }
       });
       
       if (error) {
@@ -103,15 +112,15 @@ export default function UserManagement() {
                 const body = await res.json();
                 console.error('Edge Function Error Body:', body);
 
-                // 直接在此处拦截 401 Invalid JWT
+                // Handle 401 Invalid JWT gracefully
                 if (body?.code === 401 || body?.message === 'Invalid JWT') {
                     console.error('Critical Auth Error detected in response body.');
-                    // 暂时注释掉强制登出，以便调试
-                    // await supabase.auth.signOut();
-                    // localStorage.clear();
-                    // sessionStorage.clear();
-                    // window.location.href = '/';
-                    // return; 
+                    alert('您的登录会话已过期或无效，请重新登录。');
+                    await supabase.auth.signOut();
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    window.location.href = '/login';
+                    return; 
                 }
             } catch (e) {
                 console.error('Error parsing error body:', e);
@@ -125,23 +134,12 @@ export default function UserManagement() {
       console.error('Failed to load users:', err);
       // Auto logout on Invalid JWT or 401
       if (JSON.stringify(err).includes('Invalid JWT') || (err as any)?.status === 401) {
-        console.error('Invalid Session detected. Token payload analysis:');
-        try {
-            const token = (await supabase.auth.getSession()).data.session?.access_token;
-            if (token) {
-                const parts = token.split('.');
-                if (parts.length === 3) {
-                    console.error('Header:', atob(parts[0]));
-                    console.error('Payload:', atob(parts[1]));
-                }
-            }
-        } catch (e) { console.error('Token analysis failed', e); }
-
-        console.warn('Force clearing session and storage...');
+        console.error('Invalid Session detected.');
+        alert('您的登录会话已过期，请重新登录。');
         await supabase.auth.signOut();
-        localStorage.clear(); // 强制清除所有本地存储
+        localStorage.clear(); 
         sessionStorage.clear();
-        window.location.href = '/login'; // 强制跳转
+        window.location.href = '/login'; 
       }
     } finally {
       setLoading(false);
@@ -230,6 +228,73 @@ export default function UserManagement() {
     setIsDetailModalOpen(true);
   };
 
+  const handleToggleLock = async (user: User) => {
+      const action = 'toggle_lock';
+      const confirmMsg = user.status === 'blocked' 
+          ? `确定要解锁用户 ${user.email || user.external_user_id} 吗？`
+          : `确定要锁定用户 ${user.email || user.external_user_id} 吗？锁定后用户将无法登录。`;
+      
+      if (!window.confirm(confirmMsg)) return;
+
+      setActionLoading(true);
+      try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+          
+          const { error } = await supabase.functions.invoke('admin-user-action', {
+              method: 'POST',
+              headers: {
+                  Authorization: `Bearer ${anonKey}`,
+                  'x-user-token': session?.access_token || ''
+              },
+              body: { user_id: user.id, action }
+          });
+
+          if (error) throw error;
+          
+          alert(user.status === 'blocked' ? '用户已解锁' : '用户已锁定');
+          loadData();
+      } catch (err) {
+          console.error('Action failed:', err);
+          alert('操作失败，请重试');
+      } finally {
+          setActionLoading(false);
+      }
+  };
+
+  const handleDeleteUser = async (user: User) => {
+      const confirmMsg = `⚠️ 警告：确定要彻底删除用户 ${user.email || user.external_user_id} 吗？\n\n此操作不可恢复！所有相关数据（钱包、订单等）都将被删除。`;
+      if (!window.confirm(confirmMsg)) return;
+
+      const doubleConfirm = window.prompt(`请在下方输入 "DELETE" 以确认删除用户 ${user.email || user.external_user_id}`);
+      if (doubleConfirm !== 'DELETE') return;
+
+      setActionLoading(true);
+      try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+          const { error } = await supabase.functions.invoke('admin-user-action', {
+              method: 'POST',
+              headers: {
+                  Authorization: `Bearer ${anonKey}`,
+                  'x-user-token': session?.access_token || ''
+              },
+              body: { user_id: user.id, action: 'delete' }
+          });
+
+          if (error) throw error;
+
+          alert('用户已删除');
+          loadData();
+      } catch (err) {
+          console.error('Delete failed:', err);
+          alert('删除失败，请重试');
+      } finally {
+          setActionLoading(false);
+      }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -239,7 +304,7 @@ export default function UserManagement() {
         action={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
              <select
-               className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+               className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white w-full sm:w-auto"
                value={selectedAppId}
                onChange={(e) => {
                  setSelectedAppId(e.target.value);
@@ -251,7 +316,7 @@ export default function UserManagement() {
                  <option key={app.id} value={app.id}>{app.name}</option>
                ))}
              </select>
-             <div className="relative flex-1 sm:flex-initial">
+             <div className="relative w-full sm:w-auto">
                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                <input
                  type="text"
@@ -262,10 +327,10 @@ export default function UserManagement() {
                  onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
                />
              </div>
-             <Button onClick={() => setPage(1)}>
+             <Button onClick={() => setPage(1)} className="w-full sm:w-auto">
                搜索
              </Button>
-             <Button variant="primary" onClick={() => setIsCreateModalOpen(true)}>
+             <Button variant="primary" onClick={() => setIsCreateModalOpen(true)} className="w-full sm:w-auto">
                <UserIcon className="h-4 w-4 mr-2" />
                新建用户
              </Button>
@@ -281,9 +346,9 @@ export default function UserManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">用户 ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">账号</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">所属应用</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">所属应用</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">余额 (永久/临时)</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">注册时间</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">注册时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
             </thead>
@@ -312,7 +377,7 @@ export default function UserManagement() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {user.email ? <span>{user.email}</span> : <span className="text-gray-400">-</span>}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">
                       {user.platform_apps?.name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -335,21 +400,56 @@ export default function UserManagement() {
                         )}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap hidden lg:table-cell">
                       <div className="flex items-center text-sm text-gray-500">
                         <Calendar className="h-4 w-4 mr-1 text-gray-400" />
                         {new Date(user.created_at).toLocaleDateString()}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                       <Button variant="ghost" size="sm" onClick={() => openDetailModal(user)} className="mr-2">
-                         查看详情
-                       </Button>
-                       {user.platform_wallets && (
-                         <Button variant="ghost" size="sm" onClick={() => openAdjustModal(user)}>
-                           <Wallet className="h-4 w-4 text-indigo-600" />
+                      <div className="flex justify-end gap-2">
+                         <Button 
+                           variant="ghost" 
+                           size="sm" 
+                           onClick={() => openDetailModal(user)} 
+                           title="查看详情"
+                         >
+                           <Eye className="h-4 w-4 text-gray-600" />
                          </Button>
-                       )}
+
+                         {user.platform_wallets && (
+                           <Button 
+                             variant="ghost" 
+                             size="sm" 
+                             onClick={() => openAdjustModal(user)} 
+                             title="管理钱包"
+                           >
+                             <Wallet className="h-4 w-4 text-indigo-600" />
+                           </Button>
+                         )}
+
+                         <Button 
+                           variant="ghost" 
+                           size="sm" 
+                           onClick={() => handleToggleLock(user)}
+                           title={user.status === 'blocked' ? "解锁用户" : "锁定用户"}
+                         >
+                           {user.status === 'blocked' ? (
+                             <Unlock className="h-4 w-4 text-green-600" />
+                           ) : (
+                             <Lock className="h-4 w-4 text-orange-600" />
+                           )}
+                         </Button>
+
+                         <Button 
+                           variant="ghost" 
+                           size="sm" 
+                           onClick={() => handleDeleteUser(user)}
+                           title="删除用户"
+                         >
+                           <Trash2 className="h-4 w-4 text-red-600" />
+                         </Button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -359,11 +459,11 @@ export default function UserManagement() {
         </div>
         
         {/* Pagination */}
-        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-between">
+        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-sm text-gray-500">
             当前页: {page}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 w-full sm:w-auto justify-center sm:justify-end">
             <Button 
               variant="outline" 
               size="sm" 

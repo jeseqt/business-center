@@ -25,7 +25,7 @@ export function PageHeader({ title, description, icon: Icon, action }: PageHeade
         </div>
       </div>
       {action && (
-        <div className="flex-shrink-0">
+        <div className="flex-shrink-0 w-full sm:w-auto">
           {action}
         </div>
       )}

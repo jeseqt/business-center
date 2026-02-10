@@ -201,8 +201,8 @@ export default function ConfigManagement() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Key</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Value</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Env</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Value</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">Env</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -213,15 +213,25 @@ export default function ConfigManagement() {
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{config.config_key}</div>
                       <div className="text-xs text-gray-500">{config.description}</div>
+                      <dl className="md:hidden mt-1 space-y-1">
+                        <div className="flex justify-between gap-x-4 py-1">
+                          <dt className="text-xs text-gray-500">Env</dt>
+                          <dd className="text-xs text-gray-900">
+                            <Badge variant={config.environment === 'production' ? 'success' : 'warning'}>
+                              {config.environment}
+                            </Badge>
+                          </dd>
+                        </div>
+                      </dl>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 hidden md:table-cell">
                       <pre className="text-xs bg-gray-50 p-2 rounded border max-w-xs overflow-auto">
                         {typeof config.config_value === 'object' 
                           ? JSON.stringify(config.config_value, null, 1) 
                           : String(config.config_value)}
                       </pre>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap hidden lg:table-cell">
                       <Badge variant={config.environment === 'production' ? 'success' : 'warning'}>
                         {config.environment}
                       </Badge>
@@ -286,7 +296,7 @@ export default function ConfigManagement() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">适用环境</label>
               <select

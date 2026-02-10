@@ -203,9 +203,9 @@ export default function VersionManagement() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">版本</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">平台</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">更新内容</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">强制更新</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">更新内容</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">强制更新</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">状态</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                 </tr>
               </thead>
@@ -217,6 +217,16 @@ export default function VersionManagement() {
                         <span className="text-sm font-medium text-gray-900">{v.version_name}</span>
                         <span className="ml-2 text-xs text-gray-500">({v.version_code})</span>
                       </div>
+                      <dl className="sm:hidden mt-1 space-y-1">
+                         <div className="flex justify-between gap-x-4 py-1">
+                           <dt className="text-xs text-gray-500">状态</dt>
+                           <dd className="text-xs text-gray-900">
+                            <Badge variant={v.status === 'active' ? 'success' : v.status === 'draft' ? 'warning' : 'default'}>
+                                {v.status === 'active' ? '已发布' : v.status === 'draft' ? '草稿' : '已归档'}
+                            </Badge>
+                           </dd>
+                         </div>
+                      </dl>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center gap-2 text-sm text-gray-700 uppercase">
@@ -224,19 +234,19 @@ export default function VersionManagement() {
                         {v.platform}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 hidden md:table-cell">
                       <div className="text-sm text-gray-500 truncate max-w-xs" title={v.update_content}>
                         {v.update_content || '-'}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap hidden lg:table-cell">
                        {v.is_force_update ? (
                          <span className="text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded">强制</span>
                        ) : (
                          <span className="text-xs text-gray-400">可选</span>
                        )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap hidden sm:table-cell">
                       <Badge variant={v.status === 'active' ? 'success' : v.status === 'draft' ? 'warning' : 'default'}>
                         {v.status === 'active' ? '已发布' : v.status === 'draft' ? '草稿' : '已归档'}
                       </Badge>
@@ -266,7 +276,7 @@ export default function VersionManagement() {
         title={editingVersion ? "编辑版本" : "发布新版本"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">适用平台</label>
               <select
@@ -295,7 +305,7 @@ export default function VersionManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
              <div>
               <label className="block text-sm font-medium text-gray-700">版本号名称</label>
               <Input

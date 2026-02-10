@@ -178,8 +178,8 @@ export default function NotificationManagement() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">标题</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">类型</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">优先级</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">生效时间</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">优先级</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">生效时间</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
                 </tr>
@@ -199,7 +199,7 @@ export default function NotificationManagement() {
                         {item.type}
                       </Badge>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 whitespace-nowrap hidden md:table-cell">
                       <Badge variant={
                         item.priority === 'high' ? 'error' : 
                         item.priority === 'low' ? 'default' : 'success'
@@ -207,7 +207,7 @@ export default function NotificationManagement() {
                         {item.priority}
                       </Badge>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                       {new Date(item.start_time).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -265,7 +265,7 @@ export default function NotificationManagement() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">类型</label>
               <select
@@ -292,7 +292,7 @@ export default function NotificationManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">开始时间</label>
               <Input
