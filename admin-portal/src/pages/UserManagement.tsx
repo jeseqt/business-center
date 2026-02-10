@@ -39,38 +39,6 @@ export default function UserManagement() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // User Creation State
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [newUser, setNewUser] = useState({
-    app_id: '',
-    email: '',
-    password: '',
-    account: ''
-  });
-
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setActionLoading(true);
-    
-    try {
-      const { error } = await supabase.functions.invoke('admin-user-create', {
-        body: newUser
-      });
-
-      if (error) throw error;
-      
-      setIsCreateModalOpen(false);
-      setNewUser({ app_id: '', email: '', password: '', account: '' });
-      loadData();
-      alert('用户创建成功');
-    } catch (err: any) {
-      console.error(err);
-      alert('创建用户失败: ' + (err.message || '未知错误'));
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
   const loadApps = async () => {
     try {
       const { data, error } = await supabase
@@ -234,9 +202,6 @@ export default function UserManagement() {
         icon={UserIcon}
         action={
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-             <Button onClick={() => setIsCreateModalOpen(true)}>
-               创建新用户
-             </Button>
              <select
                className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                value={selectedAppId}
