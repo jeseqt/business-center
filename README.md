@@ -120,9 +120,9 @@ auth('login', 'test@test.com', '123456').then(console.log);
 
 ```json
 {
-  "model_name": "gpt-4o",       // 模型标识
-  "method_name": "chat",        // (可选) 方法名
-  "method_label": "对话生成",    // (可选) 中文解释，将在报表中显示
+  "model_name": "qwen-plus",    // 模型标识
+  "method_name": "guided-reflection-chat", // 方法名 (建议遵循下方规范)
+  "method_label": "漫漫引导复盘", // 中文解释，将在报表中显示
   "prompt_tokens": 150,         // 输入 Token 数
   "completion_tokens": 80,      // 输出 Token 数
   "request_metadata": {         // (可选) 额外的业务元数据
@@ -131,6 +131,26 @@ auth('login', 'test@test.com', '123456').then(console.log);
   }
 }
 ```
+
+**漫反射业务推荐方法名规范**:
+
+| 方法名 (`method_name`) | 中文名称 (`method_label`) | 适用场景 |
+| :--- | :--- | :--- |
+| `generate-daily-report` | 每日复盘报告 | 生成每日总结 |
+| `generate-monthly-report` | 月度自传 | 生成月度回顾 |
+| `guided-reflection-chat` | 漫漫引导复盘 | 引导式对话 |
+| `guided-goal-chat` | 漫漫目标引导 | 目标设定对话 |
+| `enhance-reflection` | 反思内容增强 | 润色用户输入 |
+| `generate-action-suggestions` | AI行动建议 | 生成后续行动 |
+| `summarize-reflection` | 反思总结 | 总结单次反思 |
+| `classify-reflection` | 反思分类 | 自动打标签 |
+| `generate-reminder` | 智能提醒 | 生成回顾提醒 |
+| `generate-periodic-report` | 周期报告 | 周报/旬报 |
+| `polish-journal` | 日记润色 | 优化日记内容 |
+| `regenerate-single-action` | 重生成行动 | 重新生成建议 |
+| `generate-summary` | 生成总结 | 通用总结 |
+| `generate-embedding` | 向量生成 | 文本向量化 |
+| `transcribe-audio` | 语音转文字 | ASR 识别 |
 
 **响应示例**:
 
@@ -228,9 +248,24 @@ auth('login', 'test@test.com', '123456').then(console.log);
 {
   "success": true,
   "data": {
-    "welcome_msg": "Happy New Year!",
-    "enable_new_feature": true,
-    "theme_color": { "primary": "#FF0000" }
+    "enable_voice_input": true,
+    "enable_ai_mentor": true,
+    "maintenance_mode": false,
+    "welcome_message": "欢迎来到漫反射，开启你的成长之旅",
+    "announcement": {
+      "enabled": false,
+      "title": "",
+      "content": "",
+      "type": "info"
+    },
+    "points_config": {
+      "points_per_reflection": 10,
+      "points_per_daily_checkin": 5
+    },
+    "ai_models": {
+      "default_chat_model": "qwen-plus",
+      "default_report_model": "qwen-max"
+    }
   }
 }
 ```
