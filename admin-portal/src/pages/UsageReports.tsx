@@ -319,10 +319,12 @@ export default function UsageReports() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Cost by App */}
         <Card>
-          <h3 className="text-sm font-medium text-gray-700 mb-4 flex items-center gap-2">
-            <Database className="h-4 w-4 text-indigo-500" />
-            各应用成本分布 (USD)
-          </h3>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-brand-50 rounded-lg border border-brand-100">
+              <Database className="h-5 w-5 text-brand-600" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-900">各应用成本分布 (USD)</h3>
+          </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={appStats}>
@@ -331,7 +333,7 @@ export default function UsageReports() {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="total_cost" name="成本 ($)" fill="#6366f1" />
+                <Bar dataKey="total_cost" name="成本 ($)" fill="#8b5cf6" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -339,10 +341,12 @@ export default function UsageReports() {
 
         {/* Daily Trend */}
         <Card>
-          <h3 className="text-sm font-medium text-gray-700 mb-4 flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-indigo-500" />
-            每日消耗趋势 (Tokens)
-          </h3>
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-brand-50 rounded-lg border border-brand-100">
+              <Calendar className="h-5 w-5 text-brand-600" />
+            </div>
+            <h3 className="text-base font-semibold text-gray-900">每日消耗趋势 (Tokens)</h3>
+          </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={dailyStats}>

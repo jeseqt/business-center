@@ -85,24 +85,97 @@ serve(async (req) => {
     // Fetch wallets for these users
     let data = users;
     if (users && users.length > 0) {
-        // platform_users.id corresponds to auth.users.id (after migration)
-        // platform_wallets.user_id corresponds to auth.users.id
-        const userIds = users.map((u: any) => u.id).filter((id: string) => !!id);
+        // 2024-05 Fix: 
+        // We strictly distinguish between platform_users.id (App Profile ID) and external_user_id (Auth ID).
+        // platform_wallets are bound to Auth ID (external_user_id).
         
-        // Use global wallet table
-        const { data: wallets } = await supabase
-            .from('platform_wallets')
-            .select('id, balance, currency, user_id')
-            .in('user_id', userIds);
+        const authIds = users.map((u: any) => u.external_user_id);
+        
+        // Map to store AuthID -> Wallet
+        const walletMap = new Map();
+
+        if (authIds.length > 0) {
+            // 1. Fetch existing wallets
+            const { data: existingWallets, error: walletError } = await supabase
+                .from('platform_wallets')
+                .select('id, balance, currency, user_id')
+                .in('user_id', authIds);
             
+            if (!walletError && existingWallets) {
+                existingWallets.forEach((w: any) => walletMap.set(w.user_id, w));
+            }
+        }
+
+        // 2. Identify missing wallets
+        // Users who have an Auth ID (external_user_id) but no wallet found
+        const usersWithoutWallet = users.filter((u: any) => !walletMap.has(u.external_user_id));
+        
+        if (usersWithoutWallet.length > 0) {
+            console.log(`Processing ${usersWithoutWallet.length} users without wallet linkage...`);
+            
+            // Process users sequentially
+            for (const u of usersWithoutWallet) {
+                const authId = u.external_user_id;
+                
+                // Skip if no valid auth id
+                if (!authId) continue;
+                
+                let wallet = walletMap.get(authId);
+                
+                if (!wallet) {
+                     // Check/Create Wallet with Correct Auth ID
+                    const { data: existingWallet } = await supabase
+                        .from('platform_wallets')
+                        .select('id, balance, currency, user_id')
+                        .eq('user_id', authId)
+                        .maybeSingle();
+                        
+                    if (existingWallet) {
+                        wallet = existingWallet;
+                    } else {
+                        // Auto-create wallet
+                        console.log(`Auto-creating wallet for user: ${u.email} (AuthID: ${authId})`);
+                        const { data: newWallet, error: createError } = await supabase
+                            .from('platform_wallets')
+                            .insert({
+                                user_id: authId,
+                                balance: 0,
+                                currency: 'CNY'
+                            })
+                            .select('id, balance, currency, user_id')
+                            .single();
+                            
+                        if (!createError && newWallet) {
+                            wallet = newWallet;
+                        } else {
+                            // Ignore duplicate key error (race condition)
+                            if (createError.code !== '23505') { 
+                                console.error(`Failed to auto-create wallet for ${u.email}:`, createError);
+                            }
+                        }
+                    }
+                }
+                
+                if (wallet) {
+                    walletMap.set(authId, wallet);
+                    u._resolved_wallet = wallet;
+                }
+            }
+        }
+
         // Merge wallet info
         data = users.map((u: any) => {
-            const wallet = wallets?.find((w: any) => w.user_id === u.id);
+            let wallet = u._resolved_wallet;
+            
+            if (!wallet) {
+                wallet = walletMap.get(u.external_user_id); // Lookup by Auth ID
+            }
+            
             return {
                 ...u,
                 platform_wallets: wallet ? {
                     id: wallet.id,
-                    balance_permanent: wallet.balance, // Map new balance to old field name for frontend compatibility
+                    balance_permanent: wallet.balance,
                     balance_temporary: 0
                 } : null
             };

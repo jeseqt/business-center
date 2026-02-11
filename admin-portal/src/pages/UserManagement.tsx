@@ -26,6 +26,8 @@ interface User {
 
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
+  const [total, setTotal] = useState(0);
+  const pageSize = 20;
   const [apps, setApps] = useState<{id: string, name: string}[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -48,6 +50,15 @@ export default function UserManagement() {
     email: '',
     password: ''
   });
+
+  // Lock User State
+  const [isLockConfirmOpen, setIsLockConfirmOpen] = useState(false);
+  const [userToLock, setUserToLock] = useState<User | null>(null);
+
+  // Delete User State
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
 
   const loadApps = async () => {
     try {
@@ -130,6 +141,7 @@ export default function UserManagement() {
         throw error;
       }
       setUsers(data.data || []);
+      setTotal(data.count || 0);
     } catch (err) {
       console.error('Failed to load users:', err);
       // Auto logout on Invalid JWT or 401
@@ -228,47 +240,60 @@ export default function UserManagement() {
     setIsDetailModalOpen(true);
   };
 
-  const handleToggleLock = async (user: User) => {
-      const action = 'toggle_lock';
-      const confirmMsg = user.status === 'blocked' 
-          ? `确定要解锁用户 ${user.email || user.external_user_id} 吗？`
-          : `确定要锁定用户 ${user.email || user.external_user_id} 吗？锁定后用户将无法登录。`;
-      
-      if (!window.confirm(confirmMsg)) return;
-
-      setActionLoading(true);
-      try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-          
-          const { error } = await supabase.functions.invoke('admin-user-action', {
-              method: 'POST',
-              headers: {
-                  Authorization: `Bearer ${anonKey}`,
-                  'x-user-token': session?.access_token || ''
-              },
-              body: { user_id: user.id, action }
-          });
-
-          if (error) throw error;
-          
-          alert(user.status === 'blocked' ? '用户已解锁' : '用户已锁定');
-          loadData();
-      } catch (err) {
-          console.error('Action failed:', err);
-          alert('操作失败，请重试');
-      } finally {
-          setActionLoading(false);
-      }
+  const handleToggleLock = (user: User) => {
+    setUserToLock(user);
+    setIsLockConfirmOpen(true);
   };
 
-  const handleDeleteUser = async (user: User) => {
-      const confirmMsg = `⚠️ 警告：确定要彻底删除用户 ${user.email || user.external_user_id} 吗？\n\n此操作不可恢复！所有相关数据（钱包、订单等）都将被删除。`;
-      if (!window.confirm(confirmMsg)) return;
+  const confirmToggleLock = async () => {
+    if (!userToLock) return;
+    const user = userToLock;
+    const action = 'toggle_lock';
 
-      const doubleConfirm = window.prompt(`请在下方输入 "DELETE" 以确认删除用户 ${user.email || user.external_user_id}`);
-      if (doubleConfirm !== 'DELETE') return;
+    setActionLoading(true);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        const { error } = await supabase.functions.invoke('admin-user-action', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${anonKey}`,
+                'x-user-token': session?.access_token || ''
+            },
+            body: { user_id: user.id, action }
+        });
 
+        if (error) throw error;
+        
+        // Optimistic update locally to avoid page refresh/loading spinner
+        setUsers(users.map(u => 
+          u.id === user.id 
+            ? { ...u, status: u.status === 'blocked' ? 'active' : 'blocked' } 
+            : u
+        ));
+        
+        setIsLockConfirmOpen(false);
+        setUserToLock(null);
+    } catch (err) {
+        console.error('Action failed:', err);
+        alert('操作失败，请重试');
+    } finally {
+        setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = (user: User) => {
+    setUserToDelete(user);
+    setDeleteConfirmationInput('');
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDeleteUser = async () => {
+      if (!userToDelete) return;
+      if (deleteConfirmationInput !== 'DELETE') return;
+
+      const user = userToDelete;
       setActionLoading(true);
       try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -285,8 +310,11 @@ export default function UserManagement() {
 
           if (error) throw error;
 
-          alert('用户已删除');
-          loadData();
+          // Remove user locally
+          setUsers(users.filter(u => u.id !== user.id));
+          
+          setIsDeleteModalOpen(false);
+          setUserToDelete(null);
       } catch (err) {
           console.error('Delete failed:', err);
           alert('删除失败，请重试');
@@ -302,43 +330,56 @@ export default function UserManagement() {
         description="查看应用用户、管理钱包余额及交易"
         icon={UserIcon}
         action={
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-             <select
-               className="px-4 py-2 border rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white w-full sm:w-auto"
-               value={selectedAppId}
-               onChange={(e) => {
-                 setSelectedAppId(e.target.value);
-                 setPage(1);
-               }}
-             >
-               <option value="">所有应用</option>
-               {apps.map(app => (
-                 <option key={app.id} value={app.id}>{app.name}</option>
-               ))}
-             </select>
-             <div className="relative w-full sm:w-auto">
-               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-               <input
-                 type="text"
-                 placeholder="按邮箱搜索..."
-                 className="pl-10 pr-4 py-2 border rounded-md w-full sm:w-64 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                 value={emailFilter}
-                 onChange={(e) => setEmailFilter(e.target.value)}
-                 onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
-               />
-             </div>
-             <Button onClick={() => setPage(1)} className="w-full sm:w-auto">
-               搜索
-             </Button>
-             <Button variant="primary" onClick={() => setIsCreateModalOpen(true)} className="w-full sm:w-auto">
-               <UserIcon className="h-4 w-4 mr-2" />
-               新建用户
-             </Button>
-           </div>
+          <Button variant="primary" onClick={() => setIsCreateModalOpen(true)}>
+            <UserIcon className="h-4 w-4 mr-2" />
+            新建用户
+          </Button>
         }
       />
 
-      <Card className="overflow-hidden">
+      {/* Filter Bar */}
+      <Card className="p-4">
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto flex-1">
+            <div className="relative w-full sm:w-64">
+              <select
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 bg-white appearance-none"
+                value={selectedAppId}
+                onChange={(e) => {
+                  setSelectedAppId(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="">所有应用</option>
+                {apps.map(app => (
+                  <option key={app.id} value={app.id}>{app.name}</option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-slate-500">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
+            </div>
+            
+            <div className="relative w-full sm:w-96">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="按邮箱搜索用户..."
+                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 placeholder:text-slate-400"
+                value={emailFilter}
+                onChange={(e) => setEmailFilter(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && setPage(1)}
+              />
+            </div>
+
+            <Button onClick={() => setPage(1)} variant="secondary" className="w-full sm:w-auto">
+              搜索
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden border-slate-200 shadow-sm">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -460,10 +501,37 @@ export default function UserManagement() {
         
         {/* Pagination */}
         <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-sm text-gray-500">
-            当前页: {page}
+          <div className="text-sm text-gray-500 flex items-center gap-4">
+            <span>共 {total} 条</span>
+            <span>第 {page} / {Math.ceil(total / pageSize) || 1} 页</span>
           </div>
-          <div className="flex gap-2 w-full sm:w-auto justify-center sm:justify-end">
+          <div className="flex gap-2 items-center w-full sm:w-auto justify-center sm:justify-end">
+            <div className="flex items-center gap-2 mr-2">
+                <span className="text-sm text-gray-500 hidden sm:inline">跳转至</span>
+                <input 
+                    type="number" 
+                    min={1} 
+                    max={Math.ceil(total / pageSize) || 1}
+                    className="w-16 px-2 py-1 text-sm border rounded-md text-center"
+                    placeholder="页码"
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            const val = parseInt((e.target as HTMLInputElement).value);
+                            const maxPage = Math.ceil(total / pageSize) || 1;
+                            if (!isNaN(val)) {
+                                if (val > 0 && val <= maxPage) {
+                                    setPage(val);
+                                } else if (val > maxPage) {
+                                    setPage(maxPage);
+                                } else if (val < 1) {
+                                    setPage(1);
+                                }
+                            }
+                        }
+                    }}
+                />
+                <span className="text-sm text-gray-500 hidden sm:inline">页</span>
+            </div>
             <Button 
               variant="outline" 
               size="sm" 
@@ -475,7 +543,7 @@ export default function UserManagement() {
             <Button 
               variant="outline" 
               size="sm" 
-              disabled={users.length < 10} // Simple check
+              disabled={page >= (Math.ceil(total / pageSize) || 1)} 
               onClick={() => setPage(p => p + 1)}
             >
               下一页
@@ -678,6 +746,106 @@ export default function UserManagement() {
                   </div>
                 )}
             </div>
+        </div>
+      </Modal>
+
+      {/* Lock/Unlock Confirmation Modal */}
+      <Modal
+        isOpen={isLockConfirmOpen}
+        onClose={() => setIsLockConfirmOpen(false)}
+        title={userToLock?.status === 'blocked' ? "解锁用户" : "锁定用户"}
+        footer={
+          <div className="flex justify-end gap-3 w-full">
+            <Button
+              variant="outline"
+              onClick={() => setIsLockConfirmOpen(false)}
+              disabled={actionLoading}
+            >
+              取消
+            </Button>
+            <Button
+              variant={userToLock?.status === 'blocked' ? "primary" : "destructive"}
+              onClick={confirmToggleLock}
+              loading={actionLoading}
+            >
+              {userToLock?.status === 'blocked' ? "确认解锁" : "确认锁定"}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center p-4 rounded-full mx-auto mb-4">
+             {userToLock?.status === 'blocked' ? 
+                <Unlock className="h-12 w-12 text-green-100 bg-green-500 p-2 rounded-full" /> : 
+                <Lock className="h-12 w-12 text-orange-100 bg-orange-500 p-2 rounded-full" />
+             }
+          </div>
+          <p className="text-center text-gray-700 text-base">
+            {userToLock?.status === 'blocked' 
+              ? `确定要解锁用户 ${userToLock?.email || userToLock?.external_user_id} 吗？`
+              : `确定要锁定用户 ${userToLock?.email || userToLock?.external_user_id} 吗？`}
+          </p>
+          {userToLock?.status !== 'blocked' && (
+             <p className="text-center text-sm text-red-600 font-medium bg-red-50 p-2 rounded border border-red-100">
+               ⚠️ 锁定后用户将无法登录系统
+             </p>
+          )}
+        </div>
+      </Modal>
+
+      {/* Delete User Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="删除用户确认"
+        footer={
+          <div className="flex justify-end gap-3 w-full">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteModalOpen(false)}
+              disabled={actionLoading}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteUser}
+              loading={actionLoading}
+              disabled={deleteConfirmationInput !== 'DELETE'}
+            >
+              确认彻底删除
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-center p-4 rounded-full mx-auto mb-4 bg-red-100">
+            <Trash2 className="h-12 w-12 text-red-600" />
+          </div>
+          <div className="text-center">
+             <h3 className="text-lg font-medium text-gray-900 mb-2">
+               确定要删除用户 {userToDelete?.email || userToDelete?.external_user_id} 吗？
+             </h3>
+             <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-700 text-left mb-4">
+               <p className="font-bold mb-1">⚠️ 此操作不可恢复！</p>
+               <ul className="list-disc list-inside space-y-1">
+                 <li>用户的登录账号将被永久删除</li>
+                 <li>用户的钱包、余额信息将被清空</li>
+                 <li>所有相关的交易记录将被删除</li>
+                 <li>此操作无法撤销</li>
+               </ul>
+             </div>
+             <p className="text-sm text-gray-500 mb-2">
+               请在下方输入 <span className="font-mono font-bold text-gray-900">DELETE</span> 以确认删除：
+             </p>
+             <input
+                type="text"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 font-mono text-center uppercase"
+                placeholder="DELETE"
+                value={deleteConfirmationInput}
+                onChange={(e) => setDeleteConfirmationInput(e.target.value)}
+             />
+          </div>
         </div>
       </Modal>
     </div>
