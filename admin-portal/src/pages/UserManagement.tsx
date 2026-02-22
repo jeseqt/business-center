@@ -388,7 +388,7 @@ export default function UserManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">账号</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邮箱</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">所属应用</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">余额 (永久/临时)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">余额</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">注册时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
@@ -427,14 +427,8 @@ export default function UserManagement() {
                           <>
                             <div className="flex items-center text-sm font-medium text-gray-900">
                               <Coins className="h-4 w-4 text-yellow-500 mr-1" />
-                              {user.platform_wallets.balance_permanent} (永久)
+                              {user.platform_wallets.balance_permanent}
                             </div>
-                            {user.platform_wallets.balance_temporary > 0 && (
-                              <div className="flex items-center text-xs text-gray-500">
-                                <Clock className="h-3 w-3 mr-1" />
-                                +{user.platform_wallets.balance_temporary} (临时)
-                              </div>
-                            )}
                           </>
                         ) : (
                           <span className="text-sm text-gray-400">无钱包</span>
@@ -703,15 +697,9 @@ export default function UserManagement() {
                     <h4 className="text-indigo-900 font-medium mb-2 flex items-center gap-2">
                         <Wallet className="h-4 w-4" /> 钱包信息
                     </h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <span className="text-indigo-600 text-xs uppercase tracking-wider">永久余额</span>
-                            <div className="text-2xl font-bold text-indigo-700">{selectedUser.platform_wallets.balance_permanent}</div>
-                        </div>
-                        <div>
-                            <span className="text-indigo-600 text-xs uppercase tracking-wider">临时余额</span>
-                            <div className="text-2xl font-bold text-indigo-700">{selectedUser.platform_wallets.balance_temporary}</div>
-                        </div>
+                    <div>
+                        <span className="text-indigo-600 text-xs uppercase tracking-wider">余额</span>
+                        <div className="text-2xl font-bold text-indigo-700">{selectedUser.platform_wallets.balance_permanent}</div>
                     </div>
                 </div>
             )}
