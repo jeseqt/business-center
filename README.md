@@ -57,7 +57,39 @@ business-center/
 
 若不遵循此格式（仅传输普通键值对），管理后台将直接显示 Key。
 
-### 1. 客户端认证 (Client Auth)
+### 1. 应用接入管理 (Admin App Manage)
+
+管理员通过此接口管理应用接入，包括创建应用、更新配置（如邀请码开关）、重置密钥等。
+
+**接口地址**: `POST /functions/v1/admin-app-manage` (创建) 或 `PUT /functions/v1/admin-app-manage` (更新)
+
+**权限**: 仅限管理员 (需携带 Admin Token)
+
+**功能 1: 创建应用**
+
+*   **Method**: `POST`
+*   **Body**:
+    ```json
+    {
+      "name": "My App",
+      "description": "App description",
+      "invite_required": true // [新功能] 是否开启邀请码验证
+    }
+    ```
+
+**功能 2: 更新应用配置 (邀请码开关)**
+
+*   **Method**: `PUT`
+*   **Body**:
+    ```json
+    {
+      "action": "update_info",
+      "app_id": "UUID",
+      "invite_required": false // 关闭邀请码验证
+    }
+    ```
+
+### 2. 客户端认证 (Client Auth)
 
 所有接入中台的应用 (APP) 均通过此接口进行用户体系的统一管理。
 
@@ -74,7 +106,7 @@ business-center/
   "action": "login",  // 或 "register"
   "email": "user@example.com",
   "password": "secret_password",
-  "invite_code": "INVITE_123", // (可选) 注册时使用的邀请码
+  "invite_code": "INVITE_123", // (可选) 注册时使用的邀请码。注意：若应用开启了“邀请码验证”，则此字段必填。
   "metadata": {                // (可选) 用户元数据，建议遵循上述 Metadata 规范
     "career": { "value": "dev", "label": "职业" }
   }
@@ -411,7 +443,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 
 位于 `admin-portal/` 目录，提供可视化的多租户管理能力。
 
-*   **应用接入管理**: 自助创建 AppID，查看 Secret。
+*   **应用接入管理**: 自助创建 AppID，查看 Secret，控制应用是否需要邀请码验证。
 *   **统一配置中心**: 动态管理功能开关、文案配置，支持多环境 (Dev/Prod)。
 *   **版本发布管理**: 发布新版本，管理强制更新策略，支持多平台 (iOS/Android/Web)。
 *   **通知中心**: 发布系统公告、活动通知，支持按优先级排序和有效期管理。

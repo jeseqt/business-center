@@ -12,7 +12,7 @@ serve(async (req) => {
     // 1. Verify App (Middleware)
     // 验证请求是否来自合法的 APP
     const appContext = await verifyApp(req, supabase);
-    const { app_id } = appContext;
+    const { app_id, invite_required } = appContext;
 
     // 2. Parse Body
     const body = await req.json();
@@ -28,6 +28,11 @@ serve(async (req) => {
     if (action === 'register') {
       // 3.1 Register Logic
       
+      // Check invite code requirement
+      if (invite_required && !invite_code) {
+          throw new Error('Invite code is required for this app');
+      }
+
       // Verify Invite Code (if provided)
       if (invite_code) {
          const { data: validCodes, error: codeError } = await supabase

@@ -51,7 +51,7 @@ serve(async (req) => {
 
     // 3. Handle Requests
     if (req.method === 'POST') {
-      const { name, description } = await req.json();
+      const { name, description, invite_required } = await req.json();
 
       if (!name) throw new Error('App Name is required');
 
@@ -67,7 +67,8 @@ serve(async (req) => {
           app_key,
           app_secret_hash,
           app_secret, // Store secret for signature verification
-          status: 'active'
+          status: 'active',
+          invite_required: invite_required || false
         })
         .select()
         .single();
@@ -86,8 +87,8 @@ serve(async (req) => {
     } 
     
     else if (req.method === 'PUT') {
-      // Handle regenerate secret
-      const { app_id, action } = await req.json();
+      const body = await req.json();
+      const { app_id, action } = body;
       
       if (action === 'regenerate_secret') {
          if (!app_id) throw new Error('App ID is required');
@@ -116,6 +117,29 @@ serve(async (req) => {
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
+      } else if (action === 'update_info') {
+        if (!app_id) throw new Error('App ID is required');
+        
+        const { name, description, invite_required, status } = body;
+        const updateData: any = {};
+        if (name !== undefined) updateData.name = name;
+        if (description !== undefined) updateData.description = description;
+        if (invite_required !== undefined) updateData.invite_required = invite_required;
+        if (status !== undefined) updateData.status = status;
+
+        const { data, error } = await supabase
+          .from('platform_apps')
+          .update(updateData)
+          .eq('id', app_id)
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        return new Response(
+          JSON.stringify({ data }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
       
       throw new Error('Invalid action');

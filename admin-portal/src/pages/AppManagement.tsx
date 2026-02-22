@@ -15,6 +15,7 @@ interface AppData {
   app_key: string;
   status: string;
   created_at: string;
+  invite_required: boolean;
 }
 
 export default function AppManagement() {
@@ -26,6 +27,7 @@ export default function AppManagement() {
   // Create Form State
   const [appName, setAppName] = useState('');
   const [appDesc, setAppDesc] = useState('');
+  const [appInviteRequired, setAppInviteRequired] = useState(false);
   const [creating, setCreating] = useState(false);
 
   // New App Result
@@ -57,7 +59,11 @@ export default function AppManagement() {
     setCreating(true);
     try {
       const { data, error } = await supabase.functions.invoke('admin-app-manage', {
-        body: { name: appName, description: appDesc },
+        body: { 
+            name: appName, 
+            description: appDesc,
+            invite_required: appInviteRequired 
+        },
         method: 'POST'
       });
 
@@ -69,10 +75,33 @@ export default function AppManagement() {
       loadApps();
       setAppName('');
       setAppDesc('');
+      setAppInviteRequired(false);
     } catch (err: any) {
       alert('创建应用失败: ' + err.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleToggleInvite = async (app: AppData) => {
+    try {
+        const newValue = !app.invite_required;
+        // Optimistic update
+        setApps(apps.map(a => a.id === app.id ? { ...a, invite_required: newValue } : a));
+
+        const { error } = await supabase.functions.invoke('admin-app-manage', {
+            body: {
+                action: 'update_info',
+                app_id: app.id,
+                invite_required: newValue
+            },
+            method: 'PUT'
+        });
+
+        if (error) throw error;
+    } catch (err: any) {
+        alert('更新失败: ' + err.message);
+        loadApps(); // Revert
     }
   };
 
@@ -105,6 +134,7 @@ export default function AppManagement() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">应用名称</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">应用 ID (Key)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">邀请码验证</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">创建时间</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
               </tr>
@@ -132,6 +162,19 @@ export default function AppManagement() {
                         <Badge variant={app.status === 'active' ? 'success' : 'secondary'}>
                           {app.status === 'active' ? '已启用' : '已停用'}
                         </Badge>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                        <button 
+                            onClick={() => handleToggleInvite(app)}
+                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 ${app.invite_required ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                            role="switch"
+                            aria-checked={app.invite_required}
+                        >
+                            <span 
+                                aria-hidden="true" 
+                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${app.invite_required ? 'translate-x-5' : 'translate-x-0'}`} 
+                            />
+                        </button>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden lg:table-cell">
                       {new Date(app.created_at).toLocaleString()}
@@ -172,6 +215,18 @@ export default function AppManagement() {
                 onChange={(e) => setAppDesc(e.target.value)} 
                 placeholder="该应用的用途说明" 
             />
+          </div>
+          <div className="flex items-center">
+            <input
+                id="invite_required"
+                type="checkbox"
+                checked={appInviteRequired}
+                onChange={(e) => setAppInviteRequired(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+            />
+            <label htmlFor="invite_required" className="ml-2 block text-sm text-gray-900">
+                启用邀请码验证
+            </label>
           </div>
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setIsCreateModalOpen(false)}>取消</Button>

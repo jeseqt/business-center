@@ -10,6 +10,7 @@ export interface AppContext {
   app_id: string;
   app_key: string;
   app_secret_hash: string;
+  invite_required: boolean;
 }
 
 export interface VerifyAppOptions {
@@ -35,7 +36,7 @@ export async function verifyApp(
   // 查询应用信息
   const { data: app, error } = await supabaseClient
     .from('platform_apps')
-    .select('id, app_key, status, app_secret_hash, app_secret')
+    .select('id, app_key, status, app_secret_hash, app_secret, invite_required')
     .eq('app_key', appKey)
     .single();
 
@@ -86,7 +87,8 @@ export async function verifyApp(
   return {
     app_id: app.id,
     app_key: app.app_key,
-    app_secret_hash: app.app_secret_hash
+    app_secret_hash: app.app_secret_hash,
+    invite_required: app.invite_required
   };
 }
 

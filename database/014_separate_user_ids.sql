@@ -41,7 +41,7 @@ BEGIN
     -- Update all users to have a new random UUID
     -- Since we enabled ON UPDATE CASCADE, this will automatically update platform_token_usage, platform_orders, etc.
     UPDATE public.platform_users
-    SET id = uuid_generate_v4();
+    SET id = gen_random_uuid();
     
     RAISE NOTICE 'All platform_users IDs have been randomized.';
     
