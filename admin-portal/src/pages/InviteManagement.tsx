@@ -59,32 +59,26 @@ export default function InviteManagement() {
       // console.error('User ID:', session?.user?.id);
       
       // 原有调用
-      const { data, error } = await supabase.functions.invoke(`admin-invite-manage?page=${page}`, {
-        method: 'GET'
-      });
+      // const { data, error } = await supabase.functions.invoke(`admin-invite-manage?page=${page}`, {
+      //   method: 'GET'
+      // });
+      
+      // Direct DB Query
+      const from = (page - 1) * 20;
+      const to = from + 19;
+      
+      const { data: resultData, error } = await supabase
+        .from('platform_invite_codes')
+        .select('*')
+        .range(from, to)
+        .order('created_at', { ascending: false });
+
       if (error) {
         // 尝试解析错误详情
-        if (error instanceof  Error && 'context' in error) {
-            const res = (error as any).context as Response;
-            if (res && res.json) {
-                const body = await res.json();
-                console.error('Edge Function Error Body:', body);
-                
-                // 直接在此处拦截 401 Invalid JWT
-                if (body?.code === 401 || body?.message === 'Invalid JWT') {
-                    console.error('Critical Auth Error detected in response body.');
-                    // 暂时注释掉强制登出，以便调试
-                    // await supabase.auth.signOut();
-                    // localStorage.clear();
-                    // sessionStorage.clear();
-                    // window.location.href = '/';
-                    // return; 
-                }
-            }
-        }
+        // if (error instanceof  Error && 'context' in error) { ... }
         throw error;
       }
-      setInvites(data.data || []);
+      setInvites(resultData || []);
       // setTotalCount(data.count || 0);
     } catch (err) {
       console.error('Failed to load invites:', err);

@@ -52,13 +52,53 @@ export default function OrderManagement() {
       if (selectedAppId) params.append('app_id', selectedAppId);
       if (keyword) params.append('keyword', keyword);
       
-      const functionName = activeTab === 'orders' ? 'admin-order-list' : 'admin-transaction-list';
-      if (activeTab === 'orders' && statusFilter) params.append('status', statusFilter);
-      if (activeTab === 'transactions' && statusFilter) params.append('type', statusFilter);
+      // const functionName = activeTab === 'orders' ? 'admin-order-list' : 'admin-transaction-list';
+      // if (activeTab === 'orders' && statusFilter) params.append('status', statusFilter);
+      // if (activeTab === 'transactions' && statusFilter) params.append('type', statusFilter);
 
-      const { data: result, error } = await supabase.functions.invoke(`${functionName}?${params.toString()}`);
+      // const { data: result, error } = await supabase.functions.invoke(`${functionName}?${params.toString()}`);
+      
+      // Direct DB Query
+      const from = (page - 1) * 20;
+      const to = from + 19;
+      
+      let query;
+      
+      if (activeTab === 'orders') {
+        query = supabase
+            .from('platform_orders')
+            .select('*, platform_apps(name), platform_users(metadata)');
+        
+        if (statusFilter) query = query.eq('status', statusFilter);
+        if (keyword) query = query.or(`platform_order_no.ilike.%${keyword}%,merchant_order_no.ilike.%${keyword}%`);
+      } else {
+        query = supabase
+            .from('platform_wallet_transactions')
+            .select('*, platform_apps(name), platform_wallets(user_id)');
+            
+        if (statusFilter) query = query.eq('type', statusFilter);
+        // Note: transactions might not have searchable fields like order no easily accessible unless joined
+        // Assuming description search or ID search
+        if (keyword) query = query.ilike('description', `%${keyword}%`);
+      }
+
+      if (selectedAppId) query = query.eq('app_id', selectedAppId);
+      
+      const { data: resultData, error } = await query
+        .range(from, to)
+        .order('created_at', { ascending: false });
+
       if (error) throw error;
-      setData(result.data || []);
+      
+      // Transform relations
+      const formattedData = (resultData || []).map((item: any) => ({
+        ...item,
+        platform_apps: Array.isArray(item.platform_apps) ? item.platform_apps[0] : item.platform_apps,
+        platform_users: item.platform_users ? (Array.isArray(item.platform_users) ? item.platform_users[0] : item.platform_users) : undefined,
+        platform_wallets: item.platform_wallets ? (Array.isArray(item.platform_wallets) ? item.platform_wallets[0] : item.platform_wallets) : undefined
+      }));
+
+      setData(formattedData);
     } catch (err) {
       console.error('Failed to load data:', err);
     } finally {

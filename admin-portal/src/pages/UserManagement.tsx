@@ -5,7 +5,7 @@ import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Search, Wallet, Coins, Calendar, User as UserIcon, Clock, Lock, Unlock, Trash2, Eye } from 'lucide-react';
+import { Search, Wallet, Coins, Calendar, User as UserIcon, Clock, Lock, Unlock, Trash2, Eye, Key } from 'lucide-react';
 
 interface User {
   id: string;
@@ -60,6 +60,24 @@ export default function UserManagement() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
 
+  // Reset Password State
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [userToReset, setUserToReset] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+
+  const getNickname = (user: User) => {
+    const meta = user.metadata || {};
+    // Check specific keys, prioritizing display_name as per requirement
+    const keys = ['display_name', 'nickname', 'name', 'full_name'];
+    for (const key of keys) {
+        const val = meta[key];
+        if (val) {
+            return typeof val === 'object' && val.value ? val.value : val;
+        }
+    }
+    return null;
+  };
+
   const loadApps = async () => {
     try {
       const { data, error } = await supabase
@@ -103,45 +121,42 @@ export default function UserManagement() {
       if (emailFilter) params.append('keyword', emailFilter);
       if (selectedAppId) params.append('app_id', selectedAppId);
       
-      // Workaround for Supabase Gateway 401 Invalid JWT error:
-      // Pass the user token in a custom header (x-user-token)
-      // and reset Authorization to the Anon Key (which is always valid for the Gateway).
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-      const { data, error } = await supabase.functions.invoke(`admin-user-list?${params.toString()}`, {
-        method: 'GET',
-        headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'x-user-token': session.access_token
-        }
-      });
+      // Direct DB Query to bypass Edge Function 401 Invalid JWT error
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase
+        .from('platform_users')
+        .select('*, platform_apps(name), platform_wallets(*)', { count: 'exact' });
+
+      if (selectedAppId) {
+        query = query.eq('app_id', selectedAppId);
+      }
+
+      if (emailFilter) {
+        const keyword = emailFilter;
+        // Search across multiple fields
+        query = query.or(`external_user_id.ilike.%${keyword}%,account.ilike.%${keyword}%,email.ilike.%${keyword}%`);
+      }
+
+      const { data, error, count } = await query
+        .range(from, to)
+        .order('created_at', { ascending: false });
       
       if (error) {
-        if (error instanceof Error && 'context' in error) {
-          const res = (error as any).context as Response;
-          if (res && res.json) {
-            try {
-                const body = await res.json();
-                console.error('Edge Function Error Body:', body);
-
-                // Handle 401 Invalid JWT gracefully
-                if (body?.code === 401 || body?.message === 'Invalid JWT') {
-                    console.error('Critical Auth Error detected in response body.');
-                    alert('您的登录会话已过期或无效，请重新登录。');
-                    await supabase.auth.signOut();
-                    localStorage.clear();
-                    sessionStorage.clear();
-                    window.location.href = '/login';
-                    return; 
-                }
-            } catch (e) {
-                console.error('Error parsing error body:', e);
-            }
-          }
-        }
+        console.error('DB Query Error:', error);
         throw error;
       }
-      setUsers(data.data || []);
-      setTotal(data.count || 0);
+      
+      // Transform data to match expected structure (handle array vs object for relations)
+      const formattedUsers = (data || []).map((u: any) => ({
+        ...u,
+        platform_apps: Array.isArray(u.platform_apps) ? u.platform_apps[0] : u.platform_apps,
+        platform_wallets: Array.isArray(u.platform_wallets) ? u.platform_wallets[0] : u.platform_wallets
+      }));
+
+      setUsers(formattedUsers);
+      setTotal(count || 0);
     } catch (err) {
       console.error('Failed to load users:', err);
       // Auto logout on Invalid JWT or 401
@@ -323,6 +338,47 @@ export default function UserManagement() {
       }
   };
 
+  const handleResetPassword = (user: User) => {
+    setUserToReset(user);
+    setNewPassword('');
+    setIsResetPasswordOpen(true);
+  };
+
+  const confirmResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userToReset || !newPassword) return;
+
+    setActionLoading(true);
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        const { error } = await supabase.functions.invoke('admin-user-action', {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${anonKey}`,
+                'x-user-token': session?.access_token || ''
+            },
+            body: { 
+                user_id: userToReset.id, 
+                action: 'reset_password',
+                password: newPassword
+            }
+        });
+
+        if (error) throw error;
+
+        alert('密码重置成功');
+        setIsResetPasswordOpen(false);
+        setUserToReset(null);
+    } catch (err) {
+        console.error('Reset password failed:', err);
+        alert('重置密码失败，请重试');
+    } finally {
+        setActionLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader 
@@ -413,7 +469,15 @@ export default function UserManagement() {
                       {user.external_user_id.slice(0, 8)}...
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {user.account ? <span className="font-medium text-gray-900">{user.account}</span> : <span className="text-gray-400">-</span>}
+                      {user.account ? (
+                        <span className="font-medium text-gray-900">{user.account}</span>
+                      ) : (
+                        getNickname(user) ? (
+                          <span className="font-medium text-gray-900">{getNickname(user)}</span>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {user.email ? <span>{user.email}</span> : <span className="text-gray-400">-</span>}
@@ -474,6 +538,15 @@ export default function UserManagement() {
                            ) : (
                              <Lock className="h-4 w-4 text-orange-600" />
                            )}
+                         </Button>
+
+                         <Button 
+                           variant="ghost" 
+                           size="sm" 
+                           onClick={() => handleResetPassword(user)}
+                           title="重置密码"
+                         >
+                           <Key className="h-4 w-4 text-blue-600" />
                          </Button>
 
                          <Button 
@@ -835,6 +908,51 @@ export default function UserManagement() {
              />
           </div>
         </div>
+      </Modal>
+
+      {/* Reset Password Modal */}
+      <Modal
+        isOpen={isResetPasswordOpen}
+        onClose={() => setIsResetPasswordOpen(false)}
+        title="重置用户密码"
+        footer={null}
+      >
+        <form onSubmit={confirmResetPassword} className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    目标用户
+                </label>
+                <div className="bg-gray-50 p-3 rounded-md text-sm text-gray-700">
+                    {userToReset?.email || userToReset?.account || userToReset?.external_user_id}
+                </div>
+            </div>
+            <Input
+                label="新密码"
+                type="password"
+                required
+                minLength={6}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="请输入新密码 (至少6位)"
+            />
+            <div className="flex justify-end gap-3 mt-4">
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsResetPasswordOpen(false)}
+                    disabled={actionLoading}
+                >
+                    取消
+                </Button>
+                <Button
+                    type="submit"
+                    variant="primary"
+                    loading={actionLoading}
+                >
+                    确认重置
+                </Button>
+            </div>
+        </form>
       </Modal>
     </div>
   );

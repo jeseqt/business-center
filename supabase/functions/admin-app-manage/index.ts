@@ -36,22 +36,34 @@ serve(async (req) => {
     if (!authHeader) throw new Error('No authorization header');
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) throw new Error('Unauthorized');
+    
+    if (authError || !user) {
+        console.error('Auth error:', authError);
+        throw new Error('Unauthorized');
+    }
+
+    console.log('User authenticated:', user.id);
 
     // 2. Admin Check
-    const { data: adminProfile } = await supabase
+    const { data: adminProfile, error: profileError } = await supabase
       .from('platform_admin_profiles')
       .select('role')
       .eq('id', user.id)
       .single();
 
+    if (profileError) {
+        console.error('Admin profile error:', profileError);
+    }
+
     if (!adminProfile) {
+      console.error('No admin profile found for user:', user.id);
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // 3. Handle Requests
     if (req.method === 'POST') {
       const { name, description, invite_required } = await req.json();
+      console.log('Creating app:', { name, description, invite_required });
 
       if (!name) throw new Error('App Name is required');
 
@@ -73,8 +85,11 @@ serve(async (req) => {
         .select()
         .single();
 
-      if (error) throw error;
-
+      if (error) {
+          console.error('Insert error:', error);
+          throw error;
+      }
+      
       return new Response(
         JSON.stringify({ 
           data: {

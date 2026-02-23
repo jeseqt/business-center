@@ -2,7 +2,11 @@
   "name": "business-center",
   "version": "1.0.0",
   "description": "本目录包含了将业务中台独立化所需的所有数据库脚本和后端函数代码。",
-  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "admin-portal",
+    "supabase/functions/*"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -11,10 +15,5 @@
   "license": "ISC",
   "devDependencies": {
     "supabase": "^2.75.1"
-  },
-  "dependencies": {
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^3.4.0"
   }
 }

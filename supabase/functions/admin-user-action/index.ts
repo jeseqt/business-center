@@ -150,6 +150,34 @@ serve(async (req) => {
         }
 
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } else if (action === 'reset_password') {
+        // 0. Get external_user_id (auth.users.id)
+        const { data: targetUser, error: fetchError } = await supabaseAdmin
+            .from('platform_users')
+            .select('external_user_id')
+            .eq('id', user_id)
+            .single();
+
+        if (fetchError || !targetUser) {
+             throw new Error('User not found in platform_users');
+        }
+
+        const authUserId = targetUser.external_user_id;
+        const { password } = await req.json();
+
+        if (!password || password.length < 6) {
+            return new Response(JSON.stringify({ error: 'Invalid password. Must be at least 6 characters.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        // 1. Update password
+        const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+            authUserId,
+            { password: password }
+        );
+
+        if (updateError) throw updateError;
+
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } else {
         return new Response(JSON.stringify({ error: 'Invalid action' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

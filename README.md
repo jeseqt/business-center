@@ -10,7 +10,6 @@ business-center/
 ├── supabase/
 │   └── functions/
 │       ├── admin-app-manage/   # [Admin API] 应用管理 (创建应用/生成密钥)
-│       ├── client-auth/        # [Client API] 统一客户端认证 (注册/登录)
 │       ├── create-payment/     # [Client API] 统一支付下单接口
 │       ├── report-usage/       # [Client API] 业务用量上报
 │       ├── fetch-config/       # [Client API] 获取动态配置
@@ -34,7 +33,7 @@ business-center/
 
 **Metadata (元数据) 传输规范**
 
-为了在管理后台获得更好的展示效果（直接显示中文含义而非英文 Key），建议所有包含 `metadata` 类型字段的接口（如用户注册、用量上报）均采用以下结构传输：
+为了在管理后台获得更好的展示效果（直接显示中文含义而非英文 Key），建议所有包含 `metadata` 类型字段的接口（如用量上报）均采用以下结构传输：
 
 ```json
 {
@@ -57,83 +56,86 @@ business-center/
 
 若不遵循此格式（仅传输普通键值对），管理后台将直接显示 Key。
 
-### 1. 应用接入管理 (Admin App Manage)
+### 1. 用户认证集成 (User Authentication)
 
-管理员通过此接口管理应用接入，包括创建应用、更新配置（如邀请码开关）、重置密钥等。
+业务中台采用 **Supabase Auth** 作为统一认证中心。各客户端 App 应直接使用 Supabase SDK (或 REST API) 进行注册和登录。
 
-**接口地址**: `POST /functions/v1/admin-app-manage` (创建) 或 `PUT /functions/v1/admin-app-manage` (更新)
+**核心机制：**
+*   **统一账号**：用户在中台注册的账号，可在所有接入 App 中通用。
+*   **自动关联**：注册时必须提供 App 标识，系统会自动创建业务档案并关联。
+*   **ID 一致性**：新注册用户的业务 ID (`platform_user_id`) 与认证 ID (`auth_user_id`) 通常一致 (1:1)，但建议参考 **1.3 节** 获取准确映射。
 
-**权限**: 仅限管理员 (需携带 Admin Token)
+#### 1.1 注册 (Sign Up)
 
-**功能 1: 创建应用**
+客户端在注册时，**必须**在 `user_metadata` (SDK 中为 `options.data`) 中携带 `app_slug` 或 `app_id`，否则注册将失败。
 
-*   **Method**: `POST`
-*   **Body**:
-    ```json
-    {
-      "name": "My App",
-      "description": "App description",
-      "invite_required": true // [新功能] 是否开启邀请码验证
-    }
-    ```
+**参数要求 (User Metadata)**:
 
-**功能 2: 更新应用配置 (邀请码开关)**
+| 字段 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `app_slug` | String | 是* | App 的唯一别名 (推荐)，如 `voice-chat-pro`。需在中台注册。 |
+| `app_id` | UUID | 是* | App 的 UUID。`app_slug` 和 `app_id` 二选一必填。 |
+| `invite_code` | String | 否 | 邀请码 (若 App 开启了强制邀请，则可能需要) |
+| `display_name` | String | 否 | 用户昵称 |
 
-*   **Method**: `PUT`
-*   **Body**:
-    ```json
-    {
-      "action": "update_info",
-      "app_id": "UUID",
-      "invite_required": false // 关闭邀请码验证
-    }
-    ```
-
-### 2. 客户端认证 (Client Auth)
-
-所有接入中台的应用 (APP) 均通过此接口进行用户体系的统一管理。
-
-**接口地址**: `POST /functions/v1/client-auth`
-
-**请求头 (Headers)**:
-*   `Content-Type`: `application/json`
-*   `x-app-id`: `YOUR_APP_KEY` (从管理后台获取)
-
-**请求体 (Body)**:
-
-```json
-{
-  "action": "login",  // 或 "register"
-  "email": "user@example.com",
-  "password": "secret_password",
-  "invite_code": "INVITE_123", // (可选) 注册时使用的邀请码。注意：若应用开启了“邀请码验证”，则此字段必填。
-  "metadata": {                // (可选) 用户元数据，建议遵循上述 Metadata 规范
-    "career": { "value": "dev", "label": "职业" }
-  }
-}
-```
-
-**前端调用示例 (JS)**:
+**代码示例 (Supabase JS SDK)**:
 
 ```javascript
-const APP_ID = 'app_xxxxxx'; // 您的 App Key
-const API_URL = 'https://<PROJECT_REF>.supabase.co/functions/v1/client-auth';
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'secure-password',
+  options: {
+    data: {
+      app_slug: 'voice-chat-pro', // [重要] 必填，用于归属判定
+      display_name: 'John Doe',
+      invite_code: 'WELCOME2026'  // 可选
+    }
+  }
+})
 
-async function auth(action, email, password) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-app-id': APP_ID
-    },
-    body: JSON.stringify({ action, email, password })
-  });
-  return await res.json();
-}
-
-// 登录
-auth('login', 'test@test.com', '123456').then(console.log);
+if (error) console.error('注册失败:', error.message)
+// 成功后，后端会自动创建 platform_user 并建立关联
 ```
+
+#### 1.2 登录 (Sign In)
+
+使用标准的 Supabase 登录流程。
+
+```javascript
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: 'user@example.com',
+  password: 'secure-password'
+})
+```
+
+#### 1.3 获取业务身份与信息 (Identity & Profile)
+
+登录成功后，推荐通过 `platform_user_bindings` 表获取准确的业务用户 ID (`platform_user_id`)，以兼容多应用账号打通场景。
+
+**步骤**:
+1.  **获取绑定关系**: 使用 Auth ID 查询 `platform_user_bindings`。
+2.  **获取业务详情**: 使用 `platform_user_id` 查询 `platform_users`。
+
+```javascript
+// 1. 获取业务用户 ID
+const { data: binding } = await supabase
+  .from('platform_user_bindings')
+  .select('platform_user_id')
+  .eq('external_user_id', user.id)
+  .eq('app_id', YOUR_APP_ID) // 当前应用的 ID
+  .single()
+
+const platformUserId = binding?.platform_user_id || user.id // 降级策略: 默认一致
+
+// 2. 获取用户信息 (余额、会员状态等)
+const { data: profile } = await supabase
+  .from('platform_users')
+  .select('*, platform_wallets(balance)')
+  .eq('id', platformUserId)
+  .single()
+```
+
+---
 
 ### 2. 业务用量上报 (Report Usage)
 
@@ -144,7 +146,7 @@ auth('login', 'test@test.com', '123456').then(console.log);
 **请求头 (Headers)**:
 *   `Content-Type`: `application/json`
 *   `Authorization`: `Bearer <USER_ACCESS_TOKEN>` (登录接口返回的 access_token)
-*   `x-app-id`: `YOUR_APP_KEY`
+*   `x-app-id`: `YOUR_APP_KEY` (App ID, UUID格式)
 *   `x-timestamp`: 当前时间戳 (毫秒)
 *   `x-sign`: 签名字符串 (详见下文“安全认证机制”)
 
@@ -197,264 +199,62 @@ auth('login', 'test@test.com', '123456').then(console.log);
 }
 ```
 
-### 3. 安全认证机制 (Security & Signature)
+### 3. 应用接入管理 (Admin App Manage)
 
-为了保证数据安全，部分敏感接口（如用量上报、钱包查询）需要进行请求签名。
+管理员通过此接口管理应用接入，包括创建应用、更新配置（如邀请码开关）、重置密钥等。
 
-**签名算法**: `HMAC-SHA256( body_string + timestamp, app_secret )`
+**接口地址**: `POST /functions/v1/admin-app-manage` (创建) 或 `PUT /functions/v1/admin-app-manage` (更新)
 
-1.  将 HTTP Request Body (JSON String) 与当前时间戳 (毫秒字符串) 拼接。
-2.  使用 `App Secret` (从管理后台获取) 作为密钥，计算 HMAC-SHA256 哈希值。
-3.  将哈希值转换为 Hex 字符串作为签名。
+**权限**: 仅限管理员 (需携带 Admin Token)
 
-**必需 Headers**:
-*   `x-app-id`: 应用 Key
-*   `x-timestamp`: 当前时间戳 (毫秒)
-*   `x-sign`: 计算出的签名 (Hex String)
+**功能 1: 创建应用**
 
-**需要签名的接口**:
-*   `POST /functions/v1/report-usage`
-*   `POST /functions/v1/client-wallet`
-*   `POST /functions/v1/api-verify-invite` (Server-to-Server)
-
-**不需要签名的接口 (公开)**:
-*   `POST /functions/v1/client-auth` (登录/注册)
-*   `POST /functions/v1/create-payment` (依赖 User Token)
-*   `GET /functions/v1/fetch-config`
-
-### 4. 独立验证邀请码 (Verify Invite)
-
-如果业务流程需要先验证邀请码有效性再进行注册，可以使用此接口。通常情况直接使用 `client-auth` 注册即可。
-
-**接口地址**: `POST /functions/v1/api-verify-invite`
-
-**请求体 (Body)**:
-
-```json
-{
-  "app_id": "YOUR_APP_KEY",
-  "code": "INVITE_123",
-  "external_user_id": "uid_123" // 需先确保用户已存在于平台，否则请直接走注册流程
-}
-```
-
-### 5. 统一支付 (Create Payment)
-
-为所有 APP 提供统一的收银台能力。
-
-**接口地址**: `POST /functions/v1/create-payment`
-
-**请求头 (Headers)**:
-*   `Authorization`: `Bearer <USER_ACCESS_TOKEN>` (登录后获取的 Token)
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**请求体 (Body)**:
-
-```json
-{
-  "amount": 100,             // 金额 (单位: 分)
-  "product_info": {          // 商品信息快照
-    "name": "VIP Membership",
-    "sku": "vip_monthly"
-  },
-  "channel": "mock"          // 支付渠道: mock, wallet, wechat, alipay
-}
-```
-
-### 6. 统一配置中心 (Fetch Config)
-
-用于获取 App 的动态配置，支持功能开关、UI 文案更新等，无需发版。
-
-**接口地址**: `GET /functions/v1/fetch-config`
-
-**请求参数 (Query)**:
-*   `keys`: (可选) 逗号分隔的 key 列表，如 `welcome_msg,show_banner`。不传则返回所有。
-*   `env`: (可选) 环境，默认为 `production`。
-
-**请求头 (Headers)**:
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**响应示例**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "enable_voice_input": true,
-    "enable_ai_mentor": true,
-    "maintenance_mode": false,
-    "welcome_message": "欢迎来到漫反射，开启你的成长之旅",
-    "announcement": {
-      "enabled": false,
-      "title": "",
-      "content": "",
-      "type": "info"
-    },
-    "points_config": {
-      "points_per_reflection": 10,
-      "points_per_daily_checkin": 5
-    },
-    "ai_models": {
-      "default_chat_model": "qwen-plus",
-      "default_report_model": "qwen-max"
-    }
-  }
-}
-```
-
-### 7. 版本检查 (Check Version)
-
-检测 App 是否有新版本，支持强制更新逻辑。
-
-**接口地址**: `GET /functions/v1/check-version`
-
-**请求参数 (Query)**:
-*   `platform`: `ios` | `android` | `web` | `macos` | `windows` (必填)
-*   `version_code`: 当前版本号 (整数), 如 `100`。
-
-**请求头 (Headers)**:
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**响应示例**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "has_update": true,
-    "latest": {
-      "version_name": "1.2.0",
-      "version_code": 102,
-      "update_content": "修复已知 Bug，优化体验。",
-      "download_url": "https://example.com/app.apk",
-      "is_force_update": true
-    }
-  }
-}
-```
-
-### 8. 通知中心 (Fetch Notifications)
-
-获取 App 的系统公告、活动消息等。
-
-**接口地址**: `GET /functions/v1/fetch-notifications`
-
-**请求头 (Headers)**:
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**响应示例**:
-
-```json
-{
-  "success": true,
-  "data": [
+*   **Method**: `POST`
+*   **Body**:
+    ```json
     {
-      "id": "uuid",
-      "title": "系统维护通知",
-      "content": "我们将于今晚进行维护...",
-      "type": "maintenance",
-      "priority": "high",
-      "start_time": "2023-10-01T00:00:00Z"
+      "name": "My App",
+      "slug": "my-app",   // [必填] 应用唯一标识，用于注册时归属判定
+      "description": "App description",
+      "invite_required": true // 是否开启邀请码验证
     }
-  ],
-  "meta": {
-    "count": 1
-  }
-}
+    ```
+
+**功能 2: 更新应用配置**
+
+*   **Method**: `PUT`
+*   **Body**:
+    ```json
+    {
+      "action": "update_info",
+      "app_id": "UUID",
+      "invite_required": false
+    }
+    ```
+
+### 4. 安全认证机制 (Security & Signature)
+
+为了防止接口被恶意刷量，部分关键接口 (如 `report-usage`) 开启了签名验证。
+
+**签名算法**:
+
+1.  **拼接字符串**: `stringToSign = x-app-id + x-timestamp + JSON.stringify(body)`
+2.  **计算 HMAC**: 使用应用的 `app_secret` 对 `stringToSign` 进行 HMAC-SHA256 计算。
+3.  **转 Hex**: 将计算结果转换为十六进制字符串，即为 `x-sign`。
+
+**前端示例 (JS)**:
+
+```javascript
+import hmacSHA256 from 'crypto-js/hmac-sha256';
+import Hex from 'crypto-js/enc-hex';
+
+const timestamp = Date.now().toString();
+const bodyStr = JSON.stringify(body);
+const stringToSign = appId + timestamp + bodyStr;
+const signature = Hex.stringify(hmacSHA256(stringToSign, appSecret));
+
+// Headers
+// x-sign: signature
+// x-timestamp: timestamp
+// x-app-id: appId
 ```
-
-### 9. 工单反馈 (Submit Ticket)
-
-允许 App 用户或游客提交问题反馈、Bug 报告。
-
-**接口地址**: `POST /functions/v1/submit-ticket`
-
-**请求头 (Headers)**:
-*   `x-app-id`: `YOUR_APP_KEY`
-*   `Content-Type`: `application/json`
-
-**请求体 (Body)**:
-
-```json
-{
-  "title": "无法登录",
-  "description": "点击登录按钮无反应...",
-  "contact_email": "user@example.com", // (可选)
-  "category": "bug",                   // (可选) bug, feature, billing, other
-  "priority": "high",                  // (可选) high, normal, low
-  "external_user_id": "uid_123"        // (可选) 业务方用户ID
-}
-```
-
-**接口地址**: `GET /functions/v1/submit-ticket` (查看工单列表)
-
-**请求参数 (Query)**:
-*   `external_user_id`: 筛选特定用户的工单。
-
-### 10. 用户钱包 (Client Wallet)
-
-统一的积分/余额系统，支持跨应用消费。
-
-**接口地址**: `GET /functions/v1/client-wallet` (查询余额)
-
-**请求头 (Headers)**:
-*   `Authorization`: `Bearer <USER_ACCESS_TOKEN>`
-*   `x-app-id`: `YOUR_APP_KEY`
-
-**响应示例**:
-
-```json
-{
-  "success": true,
-  "data": {
-    "id": "wallet_uuid",
-    "balance": 1000,      // 单位: 分
-    "currency": "CNY",
-    "updated_at": "2023-10-01T12:00:00Z"
-  }
-}
-```
-
-**接口地址**: `POST /functions/v1/client-wallet` (查询交易明细)
-
-**请求体 (Body)**:
-
-```json
-{
-  "page": 1,
-  "limit": 20
-}
-```
-
-### 11. 邀请码系统 (Invite System)
-
-用于控制应用注册权限，支持 App 维度的邀请码隔离。
-
-**核心流程**:
-1.  **管理员生成**: 在管理后台 "邀请码管理" 中批量生成指定 App 的邀请码。
-2.  **用户注册**: 用户在注册时填写邀请码。
-3.  **自动核销**: `client-auth` 接口会自动校验邀请码的有效性（所属 App、有效期、剩余次数），校验通过后自动扣减次数并允许注册。
-
-**客户端接入**:
-*   无需额外调用独立接口，只需在 `client-auth` 注册接口的 body 中携带 `invite_code` 字段即可。
-*   详见 [1. 客户端认证](#1-客户端认证-client-auth)。
-
-## 管理后台 (Admin Portal)
-
-位于 `admin-portal/` 目录，提供可视化的多租户管理能力。
-
-*   **应用接入管理**: 自助创建 AppID，查看 Secret，控制应用是否需要邀请码验证。
-*   **统一配置中心**: 动态管理功能开关、文案配置，支持多环境 (Dev/Prod)。
-*   **版本发布管理**: 发布新版本，管理强制更新策略，支持多平台 (iOS/Android/Web)。
-*   **通知中心**: 发布系统公告、活动通知，支持按优先级排序和有效期管理。
-*   **工单系统**: 查看并回复用户提交的反馈工单，支持状态流转。
-*   **业务用量报表**: 可视化展示各业务线的 Token 消耗趋势与预估成本。
-*   **用户与钱包**: 查看全平台用户状态，人工调整积分/余额。
-*   **邀请码管理**: 批量生成注册邀请码。
-
-## 部署说明
-
-1.  **数据库**: 执行 `database/*.sql` 脚本初始化表结构。
-2.  **后端函数**: 使用 `supabase functions deploy <function-name>` 部署。
-    *   *注意*: 如果使用 Supabase 网页版编辑器，请务必将 `_shared` 目录下的代码手动合并到入口文件中。
-3.  **管理后台**: 进入 `admin-portal` 目录，配置 `.env.local` 后运行 `npm run dev`。
