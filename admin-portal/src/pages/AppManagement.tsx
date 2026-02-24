@@ -89,14 +89,11 @@ export default function AppManagement() {
         // Optimistic update
         setApps(apps.map(a => a.id === app.id ? { ...a, invite_required: newValue } : a));
 
-        const { error } = await supabase.functions.invoke('admin-app-manage', {
-            body: {
-                action: 'update_info',
-                app_id: app.id,
-                invite_required: newValue
-            },
-            method: 'PUT'
-        });
+        // Use direct DB update instead of Edge Function to avoid connection issues
+        const { error } = await supabase
+            .from('platform_apps')
+            .update({ invite_required: newValue })
+            .eq('id', app.id);
 
         if (error) throw error;
     } catch (err: any) {
