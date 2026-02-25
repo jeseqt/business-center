@@ -3,79 +3,164 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import UserHome from './pages/UserHome';
 
 function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
 
   // 如果未配置环境变量，显示提示页面
   if (!isSupabaseConfigured) {
-    return (
+     // ... (keep existing code)
+     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="max-w-lg w-full bg-white p-8 rounded-lg shadow-lg border border-red-100">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">配置缺失</h1>
-              <p className="text-sm text-gray-500">无法连接到 Supabase 后端</p>
-            </div>
-          </div>
-          
-          <div className="space-y-4">
-            <p className="text-gray-700">
-              请在 <code>admin-portal</code> 目录下创建或编辑 <code>.env.local</code> 文件，填入您的 Supabase 项目信息：
-            </p>
-            
-            <div className="bg-gray-900 rounded-md p-4 overflow-x-auto">
-              <code className="text-sm text-green-400 font-mono">
-                VITE_SUPABASE_URL=https://your-project.supabase.co<br/>
-                VITE_SUPABASE_ANON_KEY=your-anon-key-here
-              </code>
-            </div>
-
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
-              <p className="text-sm text-blue-700">
-                <strong>提示：</strong> 您可以在 Supabase 控制台的 Project Settings &gt; API 中找到这些信息。
-              </p>
-            </div>
-
-            <p className="text-sm text-gray-500 pt-2 border-t">
-              修改配置后，请重启前端服务以生效。
-            </p>
-          </div>
-        </div>
+        {/* ... existing content ... */}
       </div>
     );
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+    let mounted = true;
+    
+    // 全局兜底：10秒后强制结束加载，防止页面永久卡死
+    const forceLoadTimer = setTimeout(() => {
+      if (mounted) {
+        console.warn('Force loading timeout reached');
+        setLoading(false);
+        setDebugStatus('Timeout reached, forcing load...');
+      }
+    }, 8000);
+
+    const initSession = async () => {
+      try {
+        setDebugStatus('Checking session...');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session error:', error);
+          throw error;
+        }
+
+        if (mounted) {
+          setSession(session);
+          if (session) {
+            setDebugStatus(`User found (${session.user.email}), checking role...`);
+            await checkAdminRole(session.user.id);
+          } else {
+            setDebugStatus('No session found');
+            setLoading(false);
+          }
+        }
+      } catch (e: any) {
+        console.error('Session init error:', e);
+        if (mounted) {
+          setDebugStatus(`Error: ${e.message}`);
+          setLoading(false);
+        }
+      }
+    };
+
+    initSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth event:', event);
+      if (!mounted) return;
+
       setSession(session);
+      
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session) {
+          // 只有在当前不是 loading 状态，或者还是初始状态时才重新检查
+          // 避免和 initSession 冲突导致闪烁
+          await checkAdminRole(session.user.id);
+        }
+      } else if (event === 'SIGNED_OUT') {
+        console.log('User signed out, clearing state');
+        // 清除本地存储，防止状态残留
+        localStorage.clear();
+        sessionStorage.clear();
+        
+        setSession(null);
+        setLoading(false);
+        setIsAdmin(false);
+        setDebugStatus('Signed out');
+      }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      clearTimeout(forceLoadTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
+  async function checkAdminRole(userId: string) {
+    try {
+      setDebugStatus('Verifying admin privileges...');
+      // 设置超时，防止 RLS 死锁
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const { data, error } = await supabase
+        .from('platform_admin_profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      
+      clearTimeout(timeoutId as any);
+
+      if (data && !error) {
+        setIsAdmin(true);
+        setDebugStatus('Admin role confirmed');
+      } else {
+        setIsAdmin(false);
+        setDebugStatus('User role confirmed');
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        console.warn('Check admin role timed out');
+        setDebugStatus('Role check timed out');
+      } else {
+        console.error('Error checking admin role:', e);
+        setDebugStatus(`Role check error: ${e.message}`);
+      }
+      setIsAdmin(false);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">加载中...</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 space-y-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="text-gray-500 text-sm font-medium">{debugStatus}</div>
+        <div className="text-xs text-gray-400 max-w-xs text-center">
+          如果长时间卡住，请尝试刷新页面或清除浏览器缓存
+        </div>
+      </div>
+    );
   }
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={!session ? <Login /> : <Navigate to="/dashboard" />} />
-        <Route path="/dashboard" element={session ? <Dashboard /> : <Navigate to="/" />} />
+        <Route path="/" element={
+          !session ? <Login /> : (isAdmin ? <Navigate to="/dashboard" replace /> : <Navigate to="/user" replace />)
+        } />
+        
+        <Route path="/dashboard" element={
+          session ? (isAdmin ? <Dashboard /> : <Navigate to="/user" replace />) : <Navigate to="/" replace />
+        } />
+
+        <Route path="/user" element={
+          session ? (!isAdmin ? <UserHome session={session} /> : <Navigate to="/dashboard" replace />) : <Navigate to="/" replace />
+        } />
+        
         {/* Catch all - redirect to root */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

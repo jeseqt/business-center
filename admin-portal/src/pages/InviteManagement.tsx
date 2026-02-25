@@ -50,7 +50,7 @@ export default function InviteManagement() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // const { data: { session } } = await supabase.auth.getSession();
       
       // 强制使用 error 打印，确保在控制台可见
       // console.error('=== DEBUG INFO ===');
@@ -115,7 +115,6 @@ export default function InviteManagement() {
     e.preventDefault();
     setActionLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase.functions.invoke('admin-invite-manage', {
         body: {
           app_id: genAppId,

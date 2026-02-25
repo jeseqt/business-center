@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Settings, Plus, Edit2, Trash2, Power, Search, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Settings } from 'lucide-react';
 
 interface AppData {
   id: string;
@@ -28,7 +28,6 @@ export default function ConfigManagement() {
   const [apps, setApps] = useState<AppData[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string>('');
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
-  const [loading, setLoading] = useState(false);
   
   // Create/Edit Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -62,7 +61,6 @@ export default function ConfigManagement() {
   };
 
   const loadConfigs = async (appId: string) => {
-    setLoading(true);
     const { data } = await supabase
       .from('platform_app_configs')
       .select('*')
@@ -70,7 +68,6 @@ export default function ConfigManagement() {
       .order('config_key');
     
     if (data) setConfigs(data);
-    setLoading(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

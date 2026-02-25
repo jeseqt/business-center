@@ -5,7 +5,7 @@ import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
 import { Modal } from '../components/Modal';
 import { Button } from '../components/Button';
-import { Activity, DollarSign, Database, Calendar, Eye, Code, Search, Filter, X } from 'lucide-react';
+import { Activity, Database, Calendar, Eye, Code, Search, X } from 'lucide-react';
 
 interface UsageRecord {
   id: string;
@@ -45,7 +45,6 @@ export default function UsageReports() {
   const [tableLoading, setTableLoading] = useState(false);
   const [appStats, setAppStats] = useState<AppStat[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
-  const [categoryStats, setCategoryStats] = useState<{name: string, value: number}[]>([]);
   const [recentLogs, setRecentLogs] = useState<UsageRecord[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   
@@ -259,7 +258,6 @@ export default function UsageReports() {
   const processStats = (data: UsageRecord[]) => {
     let total = 0;
     const appMap = new Map<string, AppStat>();
-    const categoryMap = new Map<string, number>();
     const dateMap = new Map<string, DailyStat>();
 
     data.forEach(record => {
@@ -272,15 +270,6 @@ export default function UsageReports() {
       appStat.total_tokens += record.total_tokens || 0;
       appMap.set(appName, appStat);
 
-      // Group by Category (Simulated based on name keywords)
-      let category = '其他';
-      if (appName.includes('商城') || appName.includes('Shop') || appName.includes('电商')) category = '电商应用';
-      else if (appName.includes('Chat') || appName.includes('AI') || appName.includes('Bot')) category = 'AI 对话';
-      else if (appName.includes('Tool') || appName.includes('工具')) category = '工具类';
-      else if (appName.includes('Game') || appName.includes('游戏')) category = '游戏娱乐';
-      
-      categoryMap.set(category, (categoryMap.get(category) || 0) + (record.cost_usd || 0));
-
       // Group by Date
       const date = new Date(record.created_at).toLocaleDateString();
       const dailyStat = dateMap.get(date) || { date, cost: 0, tokens: 0 };
@@ -291,7 +280,6 @@ export default function UsageReports() {
 
     setTotalCost(total);
     setAppStats(Array.from(appMap.values()));
-    setCategoryStats(Array.from(categoryMap.entries()).map(([name, value]) => ({ name, value })));
     // Sort daily stats by date
     setDailyStats(Array.from(dateMap.values()).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
   };

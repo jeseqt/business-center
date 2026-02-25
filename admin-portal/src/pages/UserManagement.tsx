@@ -5,7 +5,7 @@ import { Input } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Search, Wallet, Coins, Calendar, User as UserIcon, Clock, Lock, Unlock, Trash2, Eye, Key } from 'lucide-react';
+import { Search, Wallet, User as UserIcon, Coins, Lock, Unlock, Eye, Calendar, Key, Trash2 } from 'lucide-react';
 
 interface User {
   id: string;
@@ -221,7 +221,6 @@ export default function UserManagement() {
     setActionLoading(true);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase.functions.invoke('admin-wallet-manage', {
         body: {
           wallet_id: walletId,

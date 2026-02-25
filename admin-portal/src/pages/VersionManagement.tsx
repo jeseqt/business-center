@@ -192,7 +192,9 @@ export default function VersionManagement() {
 
       {/* Version List */}
       <Card className="overflow-hidden">
-        {versions.length === 0 ? (
+        {loading ? (
+           <div className="p-12 text-center text-gray-500">加载中...</div>
+        ) : versions.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
             {selectedAppId ? '暂无发布记录' : '请先选择一个应用'}
           </div>

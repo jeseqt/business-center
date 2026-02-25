@@ -4,31 +4,8 @@ import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
 import { Badge } from '../components/Badge';
-import { Search, CreditCard, History, Coins, Calendar, User as UserIcon } from 'lucide-react';
+import { Search, CreditCard } from 'lucide-react';
 
-interface Order {
-  id: string;
-  platform_order_no: string;
-  merchant_order_no: string;
-  amount: number;
-  currency: string;
-  status: string;
-  channel: string;
-  created_at: string;
-  platform_apps: { name: string };
-  platform_users: { metadata: any };
-}
-
-interface Transaction {
-  id: string;
-  amount: number;
-  balance_after: number;
-  type: string;
-  description: string;
-  created_at: string;
-  platform_apps: { name: string };
-  platform_wallets: { user_id: string };
-}
 
 export default function OrderManagement() {
   const [activeTab, setActiveTab] = useState<'orders' | 'transactions'>('orders');

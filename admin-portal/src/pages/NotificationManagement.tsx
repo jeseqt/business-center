@@ -6,7 +6,7 @@ import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Plus, Edit2, Trash2, Check, X, Bell } from 'lucide-react';
+import { Bell, Plus, Edit2, Trash2 } from 'lucide-react';
 
 interface App {
   id: string;
@@ -193,7 +193,7 @@ export default function NotificationManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Badge variant={
-                        item.type === 'announcement' ? 'info' : 
+                        item.type === 'announcement' ? 'secondary' : 
                         item.type === 'maintenance' ? 'warning' : 'success'
                       }>
                         {item.type}
@@ -201,8 +201,8 @@ export default function NotificationManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap hidden md:table-cell">
                       <Badge variant={
-                        item.priority === 'high' ? 'error' : 
-                        item.priority === 'low' ? 'default' : 'success'
+                        item.priority === 'high' ? 'destructive' : 
+                        item.priority === 'normal' ? 'warning' : 'default'
                       }>
                         {item.priority}
                       </Badge>

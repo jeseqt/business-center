@@ -11,17 +11,18 @@ import ConfigManagement from './ConfigManagement';
 import VersionManagement from './VersionManagement';
 import NotificationManagement from './NotificationManagement';
 import TicketManagement from './TicketManagement';
+import BannerManagement from './BannerManagement';
 import ProfileSettings from './ProfileSettings';
 import { 
-  Users, CreditCard, Ticket, LogOut, LayoutDashboard, 
-  Menu, Layers, BarChart3, Settings, GitBranch, 
-  Bell, MessageSquare, ChevronRight, Search,
-  ChevronLeft, ChevronRight as ChevronRightIcon
+  Users, CreditCard, Ticket, LogOut,
+  Bell, Settings, Image as ImageIcon,
+  Menu, Layers, BarChart3, GitBranch, MessageSquare, Search,
+  ChevronRight
 } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'orders' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets' | 'profile'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'orders' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets' | 'banners' | 'profile'>('users');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -47,6 +48,7 @@ export default function Dashboard() {
     { id: 'reports', label: '业务用量报表', icon: BarChart3 },
     { id: 'invites', label: '邀请码管理', icon: Ticket },
     { id: 'tickets', label: '工单系统', icon: MessageSquare },
+    { id: 'banners', label: '轮播图管理', icon: ImageIcon },
     { id: 'notifications', label: '通知中心', icon: Bell },
     { id: 'configs', label: '统一配置中心', icon: Settings },
     { id: 'versions', label: '版本发布管理', icon: GitBranch },
@@ -242,6 +244,7 @@ export default function Dashboard() {
               {activeTab === 'reports' && <UsageReports />}
               {activeTab === 'configs' && <ConfigManagement />}
               {activeTab === 'versions' && <VersionManagement />}
+              {activeTab === 'banners' && <BannerManagement />}
               {activeTab === 'notifications' && <NotificationManagement />}
               {activeTab === 'tickets' && <TicketManagement />}
               {activeTab === 'profile' && <ProfileSettings />}

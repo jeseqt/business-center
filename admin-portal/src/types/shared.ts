@@ -44,6 +44,39 @@ export interface PlatformTokenUsage {
   created_at: string;
 }
 
+export interface PlatformWallet {
+  id: string;
+  app_id: string;
+  platform_user_id: string;
+  balance_permanent: number;
+  balance_temporary: number;
+  version: number;
+  updated_at: string;
+}
+
+export interface PlatformWalletTransaction {
+  id: string;
+  wallet_id: string;
+  amount: number;
+  balance_after: number;
+  type: string;
+  description: string | null;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
+export interface PlatformBanner {
+  id: string;
+  title: string;
+  description: string | null;
+  image_url: string;
+  link_url: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // 统一 API 响应结构
 export interface ApiResponse<T = any> {
   success: boolean;

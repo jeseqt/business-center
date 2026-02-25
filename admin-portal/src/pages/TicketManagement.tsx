@@ -137,24 +137,24 @@ export default function TicketManagement() {
   };
 
   const getStatusBadge = (status: string) => {
-    const map: Record<string, any> = {
-      open: { color: 'blue', text: '待处理' },
-      in_progress: { color: 'yellow', text: '处理中' },
-      resolved: { color: 'green', text: '已解决' },
-      closed: { color: 'gray', text: '已关闭' }
+    const map: Record<string, { variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning', text: string }> = {
+      open: { variant: 'default', text: '待处理' },
+      in_progress: { variant: 'warning', text: '处理中' },
+      resolved: { variant: 'success', text: '已解决' },
+      closed: { variant: 'secondary', text: '已关闭' }
     };
     const config = map[status] || map.open;
-    return <Badge color={config.color}>{config.text}</Badge>;
+    return <Badge variant={config.variant}>{config.text}</Badge>;
   };
 
   const getPriorityBadge = (priority: string) => {
-    const map: Record<string, any> = {
-      high: { color: 'red', text: '高优先级' },
-      normal: { color: 'blue', text: '普通' },
-      low: { color: 'gray', text: '低优先级' }
+    const map: Record<string, { variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning', text: string }> = {
+      high: { variant: 'destructive', text: '高优先级' },
+      normal: { variant: 'default', text: '普通' },
+      low: { variant: 'secondary', text: '低优先级' }
     };
     const config = map[priority] || map.normal;
-    return <Badge color={config.color}>{config.text}</Badge>;
+    return <Badge variant={config.variant}>{config.text}</Badge>;
   };
 
   return (
