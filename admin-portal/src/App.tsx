@@ -80,14 +80,17 @@ function App() {
         }
       } else if (event === 'SIGNED_OUT') {
         console.log('User signed out, clearing state');
-        // 清除本地存储，防止状态残留
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        setSession(null);
-        setLoading(false);
-        setIsAdmin(false);
-        setDebugStatus('Signed out');
+        // Only clear if session is truly null (explicit sign out)
+        if (!session) {
+            localStorage.clear();
+            sessionStorage.clear();
+            setSession(null);
+            setLoading(false);
+            setIsAdmin(false);
+            setDebugStatus('Signed out');
+        } else {
+            console.warn('SIGNED_OUT event received but session still exists?', session);
+        }
       }
     });
 
@@ -117,8 +120,17 @@ function App() {
         setIsAdmin(true);
         setDebugStatus('Admin role confirmed');
       } else {
-        setIsAdmin(false);
-        setDebugStatus('User role confirmed');
+        // Only set to false if we successfully queried but found no admin profile
+        // or if it's the initial load.
+        // If we are already logged in (loading=false) and just refreshing token,
+        // a network error shouldn't kick us out immediately.
+        if (loading || !error) {
+           setIsAdmin(false);
+           setDebugStatus('User role confirmed (or error during init)');
+        } else {
+           console.warn('Check admin role failed during session refresh, keeping previous state', error);
+           setDebugStatus(`Role check warning: ${error.message}`);
+        }
       }
     } catch (e: any) {
       if (e.name === 'AbortError') {
@@ -128,7 +140,11 @@ function App() {
         console.error('Error checking admin role:', e);
         setDebugStatus(`Role check error: ${e.message}`);
       }
-      setIsAdmin(false);
+      
+      // Only reset admin status on initial load or if explicitly failed
+      if (loading) {
+        setIsAdmin(false);
+      }
     } finally {
       setLoading(false);
     }

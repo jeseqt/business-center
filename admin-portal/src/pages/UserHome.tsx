@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { BannerCarousel } from '../components/BannerCarousel';
-import { User, LogOut, Wallet, History } from 'lucide-react';
+import { User, LogOut, Wallet, History, Loader2 } from 'lucide-react';
 import { PlatformWallet, PlatformWalletTransaction } from '../types/shared';
 import { Session } from '@supabase/supabase-js';
 
@@ -12,229 +12,15 @@ interface UserHomeProps {
 
 export default function UserHome({ session }: UserHomeProps) {
   const [user, setUser] = useState<any>(session?.user || null);
-  const [platformUser, setPlatformUser] = useState<any>(null); // State for platform user
+  const [loading, setLoading] = useState(true);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
-
-  const [debugInfo, setDebugInfo] = useState<any>({}); // For fetch errors
-  const [diagnosticInfo, setDiagnosticInfo] = useState<any>({}); // For system diagnostics
-  const [showDebug, setShowDebug] = useState<boolean>(true);
 
   useEffect(() => {
     // Sync user state with session prop if it changes
     if (session?.user) {
       setUser(session.user);
-    }
-  }, [session]);
-
-  // Fetch data useEffect
-  useEffect(() => {
-    let mounted = true;
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    const fetchData = async () => {
-      // Timeout mechanism
-      const timeoutId = setTimeout(() => {
-        if (mounted) {
-            console.warn('Fetch timed out, aborting...');
-            controller.abort();
-            setDebugInfo(prev => ({ ...prev, error: '请求超时 (15s)', stack: 'Network request timed out' }));
-        }
-      }, 15000);
-
-      try {
-        // Clear previous errors
-        setDebugInfo({});
-        setDebugInfo(prev => ({ ...prev, step: 'Starting fetch...' }));
-        
-        let currentUser = session?.user;
-        
-        setDebugInfo(prev => ({ ...prev, step: 'Checking user...' }));
-        // Fallback: double check if prop is missing but client has session
-        if (!currentUser) {
-            const { data } = await supabase.auth.getSession();
-            currentUser = data.session?.user;
-        }
-
-        if (!currentUser) {
-            // Last resort: check server
-            const { data: { user } } = await supabase.auth.getUser();
-            currentUser = user || undefined;
-        }
-
-        if (!mounted) return;
-        setUser(currentUser);
-        
-        if (currentUser) {
-            setDebugInfo(prev => ({ ...prev, step: 'User found, checking token...' }));
-            // Force refresh session to ensure RLS context is valid
-            // Only if token is missing
-            if (!session?.access_token) {
-                setDebugInfo(prev => ({ ...prev, step: 'Refreshing session...' }));
-                const { error: refreshError } = await supabase.auth.refreshSession();
-                if (refreshError) {
-                    console.error('Session refresh failed:', refreshError);
-                    // Continue anyway, maybe the token is still valid
-                }
-            }
-
-            if (!mounted) return;
-            setDebugInfo(prev => ({ ...prev, step: 'Fetching platform_users (RPC)...' }));
-            
-            // Try RPC first (Fast Path)
-            try {
-                const { data: rpcData, error: rpcError } = await supabase.rpc('get_or_create_user_dashboard_data');
-                
-                if (!rpcError && rpcData) {
-                    // RPC Success
-                    // setDebugInfo(prev => ({ ...prev, step: 'RPC Success' }));
-                    setPlatformUser(rpcData.platform_user);
-                    setWallet(rpcData.wallet);
-                    setTransactions(rpcData.transactions || []);
-                    setDebugInfo(prev => ({ ...prev, step: 'Fetch complete (RPC)' }));
-                    return; // Exit early
-                } else {
-                    console.warn('RPC failed or not found, falling back to REST:', rpcError);
-                    setDebugInfo(prev => ({ ...prev, step: 'RPC failed, trying REST...' }));
-                }
-            } catch (rpcEx) {
-                console.warn('RPC Exception:', rpcEx);
-            }
-
-            // Fallback to REST (Slow Path)
-            setDebugInfo(prev => ({ ...prev, step: 'Fetching platform_users (REST)...' }));
-            
-            // Fetch platform user with abort signal
-            let { data: pUser, error: platformError } = await supabase
-                .from('platform_users')
-                .select('id, app_id, external_user_id')
-                .eq('external_user_id', currentUser.id)
-                .abortSignal(signal)
-                .maybeSingle();
-            
-            if (!mounted) return;
-
-            // Auto-create platform_users record if missing
-            if (!pUser && !platformError) {
-                setDebugInfo(prev => ({ ...prev, step: 'Auto-creating platform_users...' }));
-                console.log('Platform user missing, attempting to create...');
-                try {
-                // Try to get ANY active app first
-                let { data: defaultApp } = await supabase
-                    .from('platform_apps')
-                    .select('id')
-                    .eq('status', 'active') // Filter for active apps
-                    .limit(1)
-                    .abortSignal(signal)
-                    .maybeSingle();
-
-                // If no active app found, try to get ANY app (fallback)
-                if (!defaultApp) {
-                        console.warn('No active app found, trying any app...');
-                        const { data: anyApp } = await supabase
-                        .from('platform_apps')
-                        .select('id')
-                        .limit(1)
-                        .abortSignal(signal)
-                        .maybeSingle();
-                        defaultApp = anyApp;
-                }
-
-                if (defaultApp) {
-                    const { data: newUser, error: createError } = await supabase
-                    .from('platform_users')
-                    .insert([{ 
-                        external_user_id: currentUser.id,
-                        app_id: defaultApp.id
-                    }])
-                    .select('id, app_id, external_user_id')
-                    .abortSignal(signal)
-                    .single();
-                    
-                    if (createError) {
-                    console.error('Failed to auto-create platform user:', createError);
-                    platformError = createError;
-                    } else {
-                    pUser = newUser;
-                    console.log('Successfully created platform user:', newUser);
-                    }
-                } else {
-                    console.warn('No platform_apps found, cannot create user.');
-                    platformError = { 
-                    message: 'No platform_apps available to bind user.', 
-                    details: '', 
-                    hint: '', 
-                    code: '404', 
-                    name: 'NotFoundError' 
-                    };
-                }
-                } catch (err) {
-                console.error('Error in auto-creation logic:', err);
-                }
-            }
-
-            if (!mounted) return;
-            setPlatformUser(pUser); // Update platform user state
-            setDebugInfo(prev => ({ ...prev, step: 'Platform user fetched' }));
-            
-            if (platformError) {
-                setDebugInfo((prev: any) => ({ ...prev, platformError }));
-            }
-
-            if (pUser) {
-                setDebugInfo(prev => ({ ...prev, step: 'Fetching wallet...' }));
-                // Fetch wallet
-                const { data: walletData, error: walletError } = await supabase
-                .from('platform_wallets')
-                .select('*')
-                .eq('platform_user_id', pUser.id)
-                .abortSignal(signal)
-                .maybeSingle();
-
-                if (!mounted) return;
-                setWallet(walletData);
-                if (walletError) setDebugInfo((prev: any) => ({ ...prev, walletError }));
-
-                if (walletData) {
-                setDebugInfo(prev => ({ ...prev, step: 'Fetching transactions...' }));
-                // Fetch transactions
-                const { data: txData, error: txError } = await supabase
-                    .from('platform_wallet_transactions')
-                    .select('*')
-                    .eq('wallet_id', walletData.id)
-                    .order('created_at', { ascending: false })
-                    .limit(5)
-                    .abortSignal(signal);
-                
-                if (!mounted) return;
-                setTransactions(txData || []);
-                if (txError) setDebugInfo((prev: any) => ({ ...prev, txError }));
-                }
-            }
-        }
-        setDebugInfo(prev => ({ ...prev, step: 'Fetch complete' }));
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-           console.error('Fetch aborted due to timeout');
-           // Handled in timeout callback
-        } else {
-           console.error('Fetch error:', err);
-           setDebugInfo(prev => ({ ...prev, error: err.message, stack: err.stack }));
-        }
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    };
-
-    if (session?.user) {
-        // Small delay to allow auth state to settle
-        const timer = setTimeout(fetchData, 100);
-        return () => {
-            clearTimeout(timer);
-            mounted = false;
-            controller.abort();
-        };
     }
   }, [session]);
 
@@ -250,6 +36,192 @@ export default function UserHome({ session }: UserHomeProps) {
     // 强制跳转
     window.location.href = '/';
   };
+
+  // Fetch data useEffect
+  useEffect(() => {
+    let mounted = true;
+    let fetchTimeoutTimer: any;
+    
+    // Safety check: ensure we have a valid user
+    if (!session?.user) {
+        setLoading(false);
+        return;
+    }
+
+    const fetchData = async () => {
+      setLoading(true);
+      setTransactionsLoading(true);
+      
+      // Global timeout for the entire operation
+      fetchTimeoutTimer = setTimeout(() => {
+        if (mounted && loading) {
+            console.warn('[UserHome] Global fetch timeout reached (15s)');
+            setLoading(false);
+            // Don't logout automatically, just stop loading
+            // handleLogout(); 
+            alert('数据加载超时，请检查网络连接或刷新页面重试');
+        }
+      }, 15000);
+
+      const currentUser = session.user;
+      
+      try {
+        // Wrapper for timeouts with detailed logging
+        const withTimeout = async (promise: PromiseLike<any>, ms: number, label: string) => {
+            const timeoutPromise = new Promise((_, reject) => {
+                const id = setTimeout(() => {
+                    clearTimeout(id);
+                    reject(new Error(`${label} timed out after ${ms}ms`));
+                }, ms);
+            });
+
+            try {
+                const result = await Promise.race([promise, timeoutPromise]);
+                return result;
+            } catch (error) {
+                console.error(`[UserHome] ${label} failed/timed out:`, error);
+                throw error;
+            }
+        };
+
+        // 1. Fetch platform_users first (no join to avoid RLS/slow nested queries)
+        console.log('[UserHome] Fetching user profile for:', currentUser.id);
+        
+        let { data: pUser, error: platformError } = await withTimeout(
+            supabase
+                .from('platform_users')
+                .select('*')
+                .eq('external_user_id', currentUser.id)
+                .maybeSingle(),
+            5000, 
+            'Profile Fetch'
+        );
+
+        if (platformError) {
+            console.error('[UserHome] platform_users fetch error:', platformError);
+            throw platformError;
+        }
+        
+        // 4. Auto-create if missing
+        if (!pUser) {
+            console.log('[UserHome] User not found, attempting auto-create...');
+            
+            // Get default app
+            const { data: apps, error: appError } = await withTimeout(
+                supabase
+                    .from('platform_apps')
+                    .select('id')
+                    .eq('status', 'active')
+                    .limit(1),
+                3000,
+                'App Lookup'
+            );
+            
+            if (appError) {
+                console.error('[UserHome] App Lookup failed:', appError);
+                throw appError; // Treat as critical error
+            }
+            
+            const defaultAppId = apps?.[0]?.id;
+            
+            if (defaultAppId) {
+                const { data: newUser, error: createError } = await supabase
+                    .from('platform_users')
+                    .insert({
+                        external_user_id: currentUser.id,
+                        app_id: defaultAppId,
+                        phone: currentUser.phone || null,
+                        email: currentUser.email || null
+                    })
+                    .select()
+                    .single();
+                    
+                if (createError) {
+                    console.error('[UserHome] Auto-create failed:', createError);
+                    throw createError; // Treat as critical error
+                } else {
+                    pUser = newUser;
+                    console.log('[UserHome] Auto-create success:', newUser);
+                }
+            } else {
+                console.warn('[UserHome] No active apps found for auto-create');
+                throw new Error('No active apps found for auto-create');
+            }
+        }
+
+        // 5. Process Wallet & Fetch Transactions
+        if (pUser) {
+            
+            // Always fetch wallet explicitly to avoid nested-join RLS issues
+            let walletData: any = null;
+            try {
+                 const { data: fetchedWallet } = await withTimeout(
+                    supabase
+                        .from('platform_wallets')
+                        .select('*')
+                        .eq('platform_user_id', pUser.id)
+                        .maybeSingle(),
+                    5000,
+                    'Wallet Fetch'
+                );
+                if (fetchedWallet) walletData = fetchedWallet;
+            } catch (walletError) {
+                console.error('[UserHome] Wallet fetch failed:', walletError);
+            }
+            
+            if (walletData) {
+                if (mounted) setWallet(walletData);
+                
+                // Show profile/wallet immediately
+                if (mounted) setLoading(false);
+                
+                // Fetch transactions immediately
+                try {
+                    const { data: txData } = await withTimeout(
+                        supabase
+                            .from('platform_wallet_transactions')
+                            .select('*')
+                            .eq('wallet_id', walletData.id)
+                            .order('created_at', { ascending: false })
+                            .limit(5),
+                        5000,
+                        'Transactions Fetch'
+                    );
+                        
+                    if (txData && mounted) setTransactions(txData);
+                } catch (txError) {
+                    console.error('[UserHome] Transactions fetch failed (non-critical):', txError);
+                } finally {
+                    if (mounted) setTransactionsLoading(false);
+                }
+            } else {
+                 // No wallet found even after fallback
+                 if (mounted) setLoading(false);
+                 if (mounted) setTransactionsLoading(false);
+            }
+        }
+
+      } catch (err: any) {
+        console.error('[UserHome] Critical error:', err);
+        if (mounted) {
+            // Don't logout on error, just stop loading and show error message
+            setLoading(false);
+            setTransactionsLoading(false);
+            // alert(`数据加载失败: ${err.message || '未知错误'}`);
+        }
+      } finally {
+        if (mounted && loading) setLoading(false);
+        if (fetchTimeoutTimer) clearTimeout(fetchTimeoutTimer);
+      }
+    };
+
+    fetchData();
+
+    return () => {
+        mounted = false;
+        if (fetchTimeoutTimer) clearTimeout(fetchTimeoutTimer);
+    };
+  }, [session]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 relative overflow-hidden bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px]">
@@ -279,30 +251,7 @@ export default function UserHome({ session }: UserHomeProps) {
         </div>
 
         <div className="grid gap-6 md:grid-cols-12">
-            {debugInfo.error && (
-              <div className="md:col-span-12 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm backdrop-blur-sm">
-                <p className="font-bold flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"/> 数据加载失败</p>
-                <p className="mt-1 opacity-80">
-                  {debugInfo.error === 'Fetch timeout' || debugInfo.error === '请求超时 (15s)' 
-                    ? '网络连接超时，请检查您的网络连接或稍后重试。' 
-                    : `错误信息: ${debugInfo.error}`}
-                </p>
-                <p className="mt-1 text-xs opacity-50 font-mono">{debugInfo.stack}</p>
-              </div>
-            )}
-            
-            {!platformUser && user && !debugInfo.error && !debugInfo.platformError && (
-            <div className="md:col-span-12 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 backdrop-blur-sm">
-              <h3 className="font-bold flex items-center gap-2">
-                ⚠️ 账号数据不完整
-              </h3>
-              <p className="mt-2 text-sm opacity-80">
-                检测到您的账号在业务系统中缺失档案数据（platform_users）。系统尝试自动修复失败，请联系管理员。
-              </p>
-            </div>
-          )}
-
-          {/* Banner Carousel - Full Width */}
+            {/* Banner Carousel - Full Width */}
           <div className="md:col-span-12">
             <BannerCarousel />
           </div>
@@ -330,7 +279,11 @@ export default function UserHome({ session }: UserHomeProps) {
                     永久积分
                   </div>
                   <div className="text-3xl font-bold text-slate-900 tracking-tight group-hover/card:text-brand-600 transition-colors">
-                    {wallet?.balance_permanent?.toLocaleString() ?? 0}
+                    {loading ? (
+                      <div className="h-9 w-24 bg-slate-200 rounded animate-pulse" />
+                    ) : (
+                      wallet?.balance_permanent?.toLocaleString() ?? 0
+                    )}
                   </div>
                   <div className="mt-2 text-xs text-slate-400">永久额度</div>
                 </div>
@@ -340,7 +293,11 @@ export default function UserHome({ session }: UserHomeProps) {
                     临时积分
                   </div>
                   <div className="text-3xl font-bold text-slate-900 tracking-tight group-hover/card:text-emerald-600 transition-colors">
-                    {wallet?.balance_temporary?.toLocaleString() ?? 0}
+                    {loading ? (
+                      <div className="h-9 w-24 bg-slate-200 rounded animate-pulse" />
+                    ) : (
+                      wallet?.balance_temporary?.toLocaleString() ?? 0
+                    )}
                   </div>
                   <div className="mt-2 text-xs text-slate-400">临时额度</div>
                 </div>
@@ -359,7 +316,11 @@ export default function UserHome({ session }: UserHomeProps) {
               </div>
               
               <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-                {transactions.length > 0 ? (
+                {transactionsLoading ? (
+                  <div className="h-full flex items-center justify-center">
+                    <Loader2 className="w-8 h-8 text-brand-500 animate-spin opacity-50" />
+                  </div>
+                ) : transactions.length > 0 ? (
                   transactions.map((tx) => (
                     <div key={tx.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 hover:border-slate-200 transition-all group">
                       <div>
@@ -396,50 +357,6 @@ export default function UserHome({ session }: UserHomeProps) {
         </div>
       </div>
 
-      {/* Debug Panel */}
-      {showDebug && (
-        <div className="fixed bottom-0 right-0 w-96 max-h-screen overflow-y-auto bg-gray-900 text-white p-4 shadow-xl z-50 text-xs font-mono opacity-90">
-            <div className="flex justify-between items-center mb-2 border-b border-gray-700 pb-2">
-                <h3 className="font-bold text-green-400">System Diagnostics</h3>
-                <button onClick={() => setShowDebug(false)} className="text-gray-400 hover:text-white">✕</button>
-            </div>
-            <div className="space-y-2">
-                <div>
-                    <span className="text-gray-500">Session User:</span>
-                    <span className="ml-2 text-blue-300">{session?.user?.id || 'null'}</span>
-                </div>
-                <div>
-                    <span className="text-gray-500">Access Token:</span>
-                    <span className="ml-2 text-yellow-300 break-all">{session?.access_token ? 'Present' : 'Missing'}</span>
-                </div>
-                {debugInfo.step && (
-                    <div>
-                        <span className="text-gray-500">Current Step:</span>
-                        <span className="ml-2 text-purple-300">{debugInfo.step}</span>
-                    </div>
-                )}
-                <div className="border-t border-gray-700 pt-2">
-                    <h4 className="font-bold text-gray-300 mb-1">Diagnostic Results:</h4>
-                    <pre className="whitespace-pre-wrap text-gray-400">
-                        {JSON.stringify(diagnosticInfo, null, 2)}
-                    </pre>
-                    {Object.keys(debugInfo).length > 0 && (
-                        <>
-                            <h4 className="font-bold text-red-300 mt-2 mb-1">Fetch Errors / Logs:</h4>
-                            <pre className="whitespace-pre-wrap text-red-400">
-                                {JSON.stringify(debugInfo, null, 2)}
-                            </pre>
-                        </>
-                    )}
-                </div>
-                {diagnosticInfo.exception && (
-                    <div className="text-red-400 bg-red-900/20 p-2 rounded mt-2">
-                        EXCEPTION: {diagnosticInfo.exception}
-                    </div>
-                )}
-            </div>
-        </div>
-      )}
   </div>
   );
 }

@@ -13,6 +13,8 @@ export default function BannerManagement() {
   const [currentBanner, setCurrentBanner] = useState<Partial<PlatformBanner>>({});
   const [isEditing, setIsEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteBannerId, setDeleteBannerId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchBanners();
@@ -35,12 +37,22 @@ export default function BannerManagement() {
   };
 
   const handleSave = async () => {
+    // Basic validation
+    if (!currentBanner.title?.trim()) {
+      alert('请输入标题');
+      return;
+    }
+    if (!currentBanner.image_url?.trim()) {
+      alert('请上传图片或输入图片链接');
+      return;
+    }
+
     try {
       const bannerData = {
-        title: currentBanner.title,
-        description: currentBanner.description,
-        image_url: currentBanner.image_url,
-        link_url: currentBanner.link_url,
+        title: currentBanner.title.trim(),
+        description: currentBanner.description?.trim() || null,
+        image_url: currentBanner.image_url.trim(),
+        link_url: currentBanner.link_url?.trim() || null,
         sort_order: currentBanner.sort_order || 0,
         is_active: currentBanner.is_active ?? true,
         updated_at: new Date().toISOString(),
@@ -61,23 +73,34 @@ export default function BannerManagement() {
 
       setIsModalOpen(false);
       fetchBanners();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving banner:', error);
-      alert('保存失败，请检查输入');
+      alert(`保存失败: ${error.message || '未知错误'}`);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除这个轮播图吗？')) return;
+  const handleDelete = (id: string) => {
+    setDeleteBannerId(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteBannerId) return;
+    
     try {
       const { error } = await supabase
         .from('platform_banners')
         .delete()
-        .eq('id', id);
+        .eq('id', deleteBannerId);
+        
       if (error) throw error;
+      
       fetchBanners();
+      setIsDeleteModalOpen(false);
+      setDeleteBannerId(null);
     } catch (error) {
       console.error('Error deleting banner:', error);
+      alert('删除失败，请重试');
     }
   };
 
@@ -315,6 +338,22 @@ export default function BannerManagement() {
               </label>
             </div>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="确认删除"
+        footer={
+          <div className="flex justify-end gap-3 w-full">
+            <Button variant="ghost" onClick={() => setIsDeleteModalOpen(false)}>取消</Button>
+            <Button variant="destructive" onClick={confirmDelete}>确认删除</Button>
+          </div>
+        }
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-slate-600">确定要删除这个轮播图吗？此操作无法撤销。</p>
         </div>
       </Modal>
     </div>

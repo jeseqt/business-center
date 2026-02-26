@@ -50,11 +50,19 @@ export function BannerCarousel() {
   }, []);
 
   const fetchBanners = async () => {
-    // Manual timeout mechanism using Promise.race
-    let raceTimer: any;
     const controller = new AbortController();
     
     try {
+      // Create a timeout promise that rejects
+      const timeoutPromise = new Promise((_, reject) => {
+        const id = setTimeout(() => {
+            clearTimeout(id);
+            controller.abort();
+            reject(new Error('Banner fetch timeout (5s)'));
+        }, 5000);
+      });
+
+      // Execute the fetch
       const fetchPromise = supabase
         .from('platform_banners')
         .select('*')
@@ -62,15 +70,10 @@ export function BannerCarousel() {
         .order('sort_order', { ascending: true })
         .abortSignal(controller.signal);
       
-      const timeoutPromise = new Promise((_, reject) => {
-        raceTimer = setTimeout(() => {
-            controller.abort();
-            reject(new Error('Fetch timeout'));
-        }, 5000);
-      });
-
-      // @ts-ignore
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+      // Race them
+      // @ts-ignore - Supabase builder is thenable but TS doesn't fully see it as Promise compatible here without casting
+      const result: any = await Promise.race([fetchPromise, timeoutPromise]);
+      const { data, error } = result;
 
       if (error) {
         console.warn('Error fetching banners (using default):', error);
@@ -84,7 +87,6 @@ export function BannerCarousel() {
       console.warn('Banner fetch timed out or failed (using default):', err);
       setBanners(DEFAULT_BANNERS);
     } finally {
-      if (raceTimer) clearTimeout(raceTimer);
       setLoading(false);
     }
   };

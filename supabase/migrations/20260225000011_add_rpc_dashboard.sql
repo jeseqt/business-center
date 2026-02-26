@@ -25,7 +25,7 @@ BEGIN
     -- 1. Try to find existing platform_user
     SELECT id INTO p_user_id 
     FROM platform_users 
-    WHERE external_user_id = current_user_id::text
+    WHERE external_user_id = current_user_id
     LIMIT 1;
 
     -- 2. If not found, create one
@@ -41,7 +41,7 @@ BEGIN
         -- If we found an app, create the user
         IF app_id_val IS NOT NULL THEN
             INSERT INTO platform_users (external_user_id, app_id)
-            VALUES (current_user_id::text, app_id_val)
+            VALUES (current_user_id, app_id_val)
             RETURNING id INTO p_user_id;
         END IF;
     END IF;

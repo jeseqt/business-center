@@ -106,9 +106,10 @@ export default function UserManagement() {
       // Verify token validity with a lightweight auth check
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
-        console.warn('Current session token is invalid (likely from previous project). Signing out...');
-        await supabase.auth.signOut();
-        window.location.reload(); // Force reload to clear any stale state
+        console.warn('Current session token is invalid or expired.', authError);
+        // Don't sign out immediately, let the global auth listener handle it
+        // await supabase.auth.signOut(); 
+        // window.location.reload(); 
         return;
       }
 
