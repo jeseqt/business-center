@@ -87,24 +87,29 @@ serve(async (req) => {
       return createErrorResponse('User created in Auth but failed to create profile: ' + dbError.message, 500);
     }
 
-    // 6. Initialize Wallet (Optional but recommended)
-    // Check if wallet already exists (triggered by DB trigger?) or create one manually
-    // Assuming platform_wallets is auto-created or we need to create it.
-    // Based on previous code, let's try to create a wallet if it doesn't exist.
-    
+    // 6. Initialize Wallet
     // Check for existing wallet
     const { data: existingWallet } = await supabase
         .from('platform_wallets')
         .select('id')
-        .eq('user_id', authUser.user.id)
+        .eq('platform_user_id', platformUser.id)
         .single();
 
     if (!existingWallet) {
-        await supabase.from('platform_wallets').insert({
-            user_id: authUser.user.id,
-            balance: 0,
-            currency: 'CNY'
+        const { error: walletError } = await supabase.from('platform_wallets').insert({
+            app_id: app_id,
+            platform_user_id: platformUser.id,
+            balance_permanent: 0,
+            balance_temporary: 0
         });
+
+        if (walletError) {
+             console.error('Failed to create wallet:', walletError);
+             // Rollback user creation
+             await supabase.from('platform_users').delete().eq('id', platformUser.id);
+             await supabase.auth.admin.deleteUser(authUser.user.id);
+             return createErrorResponse('Wallet creation failed: ' + walletError.message, 500);
+        }
     }
 
     return createSuccessResponse({

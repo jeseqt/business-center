@@ -63,7 +63,7 @@ serve(async (req) => {
       const userId = authData.user.id;
 
       // 在 platform_users 中建立映射
-      const { error: platformError } = await supabase
+      const { data: platformUser, error: platformError } = await supabase
         .from('platform_users')
         .insert({
           app_id: app_id,
@@ -71,26 +71,33 @@ serve(async (req) => {
           email: email,
           account: account || email.split('@')[0],
           metadata: { email, source: 'client_api' }
-        });
+        })
+        .select()
+        .single();
         
-      if (platformError) {
-         // 回滚：如果业务表插入失败，最好删除 Auth 用户 (这里简化处理，仅报错)
+      if (platformError || !platformUser) {
          console.error('Platform user creation failed', platformError);
-         throw new Error('User registration failed in platform');
+         // 回滚：删除 Auth 用户
+         await supabase.auth.admin.deleteUser(userId);
+         throw new Error('User registration failed in platform (Rolled back)');
       }
 
       // Initialize Wallet (Create default wallet for new user)
       const { error: walletError } = await supabase
         .from('platform_wallets')
         .insert({
-            user_id: userId,
-            balance: 0,
-            currency: 'CNY'
+            app_id: app_id,
+            platform_user_id: platformUser.id, // Use the platform_users PK
+            balance_permanent: 0,
+            balance_temporary: 0
         });
         
       if (walletError) {
           console.error('Failed to create wallet:', walletError);
-          // Non-blocking error, user is created
+          // 钱包创建失败也回滚，保持数据一致性
+          await supabase.from('platform_users').delete().eq('id', platformUser.id);
+          await supabase.auth.admin.deleteUser(userId);
+          throw new Error('Wallet creation failed (Rolled back)');
       }
 
       // Redeem Invite Code (if provided)

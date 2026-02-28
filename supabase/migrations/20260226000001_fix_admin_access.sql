@@ -4,6 +4,7 @@
 -- 这避免了 "只有管理员才能检查自己是不是管理员" 的逻辑闭环风险，并提供更好的调试信息
 DROP POLICY IF EXISTS "Admins can view admin profiles" ON public.platform_admin_profiles;
 
+DROP POLICY IF EXISTS "Users can view own admin profile" ON public.platform_admin_profiles;
 CREATE POLICY "Users can view own admin profile" ON public.platform_admin_profiles
     FOR SELECT USING (auth.uid() = id);
 

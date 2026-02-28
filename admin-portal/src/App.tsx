@@ -4,6 +4,18 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import UserHome from './pages/UserHome';
+import StressTest from './pages/StressTest';
+import UserManagement from './pages/UserManagement';
+import AppManagement from './pages/AppManagement';
+import OrderManagement from './pages/OrderManagement';
+import UsageReports from './pages/UsageReports';
+import InviteManagement from './pages/InviteManagement';
+import TicketManagement from './pages/TicketManagement';
+import BannerManagement from './pages/BannerManagement';
+import NotificationManagement from './pages/NotificationManagement';
+import ConfigManagement from './pages/ConfigManagement';
+import VersionManagement from './pages/VersionManagement';
+import ProfileSettings from './pages/ProfileSettings';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -112,7 +124,8 @@ function App() {
         .from('platform_admin_profiles')
         .select('role')
         .eq('id', userId)
-        .maybeSingle();
+        .maybeSingle()
+        .abortSignal(controller.signal);
       
       clearTimeout(timeoutId as any);
 
@@ -171,12 +184,28 @@ function App() {
         
         <Route path="/dashboard" element={
           session ? (isAdmin ? <Dashboard /> : <Navigate to="/user" replace />) : <Navigate to="/" replace />
-        } />
+        }>
+          <Route index element={<Navigate to="users" replace />} />
+          <Route path="users" element={<UserManagement />} />
+          <Route path="apps" element={<AppManagement />} />
+          <Route path="orders" element={<OrderManagement />} />
+          <Route path="reports" element={<UsageReports />} />
+          <Route path="invites" element={<InviteManagement />} />
+          <Route path="tickets" element={<TicketManagement />} />
+          <Route path="banners" element={<BannerManagement />} />
+          <Route path="notifications" element={<NotificationManagement />} />
+          <Route path="configs" element={<ConfigManagement />} />
+          <Route path="versions" element={<VersionManagement />} />
+          <Route path="profile" element={<ProfileSettings />} />
+        </Route>
 
         <Route path="/user" element={
           session ? (!isAdmin ? <UserHome session={session} /> : <Navigate to="/dashboard" replace />) : <Navigate to="/" replace />
         } />
         
+        {/* Hidden Stress Test Route */}
+        <Route path="/stress-test" element={<StressTest />} />
+
         {/* Catch all - redirect to root */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

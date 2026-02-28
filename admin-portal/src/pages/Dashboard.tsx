@@ -237,17 +237,7 @@ export default function Dashboard() {
 
             {/* Content Container */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[500px]">
-              {activeTab === 'users' && <UserManagement />}
-              {activeTab === 'orders' && <OrderManagement />}
-              {activeTab === 'invites' && <InviteManagement />}
-              {activeTab === 'apps' && <AppManagement />}
-              {activeTab === 'reports' && <UsageReports />}
-              {activeTab === 'configs' && <ConfigManagement />}
-              {activeTab === 'versions' && <VersionManagement />}
-              {activeTab === 'banners' && <BannerManagement />}
-              {activeTab === 'notifications' && <NotificationManagement />}
-              {activeTab === 'tickets' && <TicketManagement />}
-              {activeTab === 'profile' && <ProfileSettings />}
+              <Outlet />
             </div>
           </div>
         </div>

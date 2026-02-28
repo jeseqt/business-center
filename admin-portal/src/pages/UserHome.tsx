@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { BannerCarousel } from '../components/BannerCarousel';
-import { User, LogOut, Wallet, History, Loader2 } from 'lucide-react';
+import { User, LogOut, Wallet, History, Loader2, AlertCircle } from 'lucide-react';
 import { PlatformWallet, PlatformWalletTransaction } from '../types/shared';
 import { Session } from '@supabase/supabase-js';
 
@@ -16,6 +16,7 @@ export default function UserHome({ session }: UserHomeProps) {
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     // Sync user state with session prop if it changes
@@ -50,23 +51,24 @@ export default function UserHome({ session }: UserHomeProps) {
 
     const fetchData = async () => {
       setLoading(true);
+      setError(null);
       setTransactionsLoading(true);
       
       // Global timeout for the entire operation
       fetchTimeoutTimer = setTimeout(() => {
         if (mounted && loading) {
-            console.warn('[UserHome] Global fetch timeout reached (15s)');
+            console.warn('[UserHome] Global fetch timeout reached (30s)');
             setLoading(false);
-            // Don't logout automatically, just stop loading
-            // handleLogout(); 
-            alert('数据加载超时，请检查网络连接或刷新页面重试');
+            setError('请求超时，请检查网络连接');
         }
-      }, 15000);
+      }, 30000);
 
-      const currentUser = session.user;
-      
+      // Pre-flight check: Ensure connection is ready
+      // This helps avoid race conditions immediately after refresh
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       try {
-        // Wrapper for timeouts with detailed logging
+        // Wrapper for timeouts
         const withTimeout = async (promise: PromiseLike<any>, ms: number, label: string) => {
             const timeoutPromise = new Promise((_, reject) => {
                 const id = setTimeout(() => {
@@ -84,130 +86,81 @@ export default function UserHome({ session }: UserHomeProps) {
             }
         };
 
-        // 1. Fetch platform_users first (no join to avoid RLS/slow nested queries)
-        console.log('[UserHome] Fetching user profile for:', currentUser.id);
+        // 1. Try RPC first (Fastest path)
+        console.log('[UserHome] Attempting RPC fetch (v2.1 - with refresh)...');
         
-        let { data: pUser, error: platformError } = await withTimeout(
-            supabase
-                .from('platform_users')
-                .select('*')
-                .eq('external_user_id', currentUser.id)
-                .maybeSingle(),
-            5000, 
-            'Profile Fetch'
-        );
-
-        if (platformError) {
-            console.error('[UserHome] platform_users fetch error:', platformError);
-            throw platformError;
-        }
+        let dashboardData = null;
+        let rpcError = null;
         
-        // 4. Auto-create if missing
-        if (!pUser) {
-            console.log('[UserHome] User not found, attempting auto-create...');
-            
-            // Get default app
-            const { data: apps, error: appError } = await withTimeout(
-                supabase
-                    .from('platform_apps')
-                    .select('id')
-                    .eq('status', 'active')
-                    .limit(1),
-                3000,
-                'App Lookup'
-            );
-            
-            if (appError) {
-                console.error('[UserHome] App Lookup failed:', appError);
-                throw appError; // Treat as critical error
-            }
-            
-            const defaultAppId = apps?.[0]?.id;
-            
-            if (defaultAppId) {
-                const { data: newUser, error: createError } = await supabase
-                    .from('platform_users')
-                    .insert({
-                        external_user_id: currentUser.id,
-                        app_id: defaultAppId,
-                        phone: currentUser.phone || null,
-                        email: currentUser.email || null
-                    })
-                    .select()
-                    .single();
-                    
-                if (createError) {
-                    console.error('[UserHome] Auto-create failed:', createError);
-                    throw createError; // Treat as critical error
-                } else {
-                    pUser = newUser;
-                    console.log('[UserHome] Auto-create success:', newUser);
-                }
-            } else {
-                console.warn('[UserHome] No active apps found for auto-create');
-                throw new Error('No active apps found for auto-create');
-            }
-        }
+        // Ensure session is fresh before RPC
+        const { error: refreshError } = await supabase.auth.getSession();
+        if (refreshError) console.warn('[UserHome] Session refresh warning:', refreshError);
 
-        // 5. Process Wallet & Fetch Transactions
-        if (pUser) {
+        // Retry logic loop
+        const MAX_RETRIES = 2;
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            if (!mounted) break;
             
-            // Always fetch wallet explicitly to avoid nested-join RLS issues
-            let walletData: any = null;
             try {
-                 const { data: fetchedWallet } = await withTimeout(
-                    supabase
-                        .from('platform_wallets')
-                        .select('*')
-                        .eq('platform_user_id', pUser.id)
-                        .maybeSingle(),
-                    5000,
-                    'Wallet Fetch'
-                );
-                if (fetchedWallet) walletData = fetchedWallet;
-            } catch (walletError) {
-                console.error('[UserHome] Wallet fetch failed:', walletError);
-            }
-            
-            if (walletData) {
-                if (mounted) setWallet(walletData);
-                
-                // Show profile/wallet immediately
-                if (mounted) setLoading(false);
-                
-                // Fetch transactions immediately
-                try {
-                    const { data: txData } = await withTimeout(
-                        supabase
-                            .from('platform_wallet_transactions')
-                            .select('*')
-                            .eq('wallet_id', walletData.id)
-                            .order('created_at', { ascending: false })
-                            .limit(5),
-                        5000,
-                        'Transactions Fetch'
-                    );
-                        
-                    if (txData && mounted) setTransactions(txData);
-                } catch (txError) {
-                    console.error('[UserHome] Transactions fetch failed (non-critical):', txError);
-                } finally {
-                    if (mounted) setTransactionsLoading(false);
+                // Exponential backoff for retries: 8s, 15s
+                const timeoutMs = attempt === 1 ? 8000 : 15000;
+                if (attempt > 1) {
+                    console.log(`[UserHome] Retrying RPC (Attempt ${attempt})...`);
+                    await new Promise(r => setTimeout(r, 1000 * attempt));
                 }
-            } else {
-                 // No wallet found even after fallback
-                 if (mounted) setLoading(false);
-                 if (mounted) setTransactionsLoading(false);
+
+                const result = await withTimeout(
+                    supabase.rpc('get_or_create_user_dashboard_data'),
+                    timeoutMs,
+                    `RPC Fetch (Attempt ${attempt})`
+                );
+                
+                if (result.error) {
+                    console.error('[UserHome] RPC Error details:', result.error);
+                    throw result.error;
+                }
+                
+                dashboardData = result.data;
+                rpcError = null;
+                break; // Success!
+            } catch (err) {
+                console.warn(`[UserHome] RPC Attempt ${attempt} failed:`, err);
+                rpcError = err;
             }
+        }
+        
+        // Check for specific RPC error return (handled in SQL)
+        if (dashboardData && dashboardData.error) {
+            console.warn('[UserHome] RPC returned logic error:', dashboardData.error);
+            rpcError = new Error(dashboardData.error);
+            dashboardData = null;
+        }
+
+        if (!rpcError && dashboardData && mounted) {
+            console.log('[UserHome] RPC success:', dashboardData);
+            if (dashboardData.wallet) setWallet(dashboardData.wallet);
+            if (dashboardData.transactions) setTransactions(dashboardData.transactions);
+            
+            setLoading(false);
+            setTransactionsLoading(false);
+            return;
+        }
+        
+        // If RPC failed after retries, show error. 
+        // We removed the manual fallback because if RPC fails (timeout/network), 
+        // manual fetch will likely fail too, and just adds confusion.
+        if (rpcError) {
+             throw rpcError;
         }
 
       } catch (err: any) {
         console.error('[UserHome] Critical error:', err);
         if (mounted) {
-            // Don't logout on error, just stop loading and show error message
             setLoading(false);
-            setTransactionsLoading(false);
-            // alert(`数据加载失败: ${err.message || '未知错误'}`);
+            // Friendly error message
+            let msg = err.message || '未知错误';
+            if (msg.includes('timeout')) msg = '网络连接超时，请刷新重试';
+            setError(`数据加载失败: ${msg}`);
         }
       } finally {
         if (mounted && loading) setLoading(false);
@@ -249,6 +202,16 @@ export default function UserHome({ session }: UserHomeProps) {
             退出登录
           </Button>
         </div>
+
+        {error && (
+            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                <p>{error}</p>
+                <Button variant="ghost" size="sm" onClick={() => window.location.reload()} className="text-rose-700 underline ml-auto hover:text-rose-800 hover:bg-rose-100">
+                    刷新重试
+                </Button>
+            </div>
+        )}
 
         <div className="grid gap-6 md:grid-cols-12">
             {/* Banner Carousel - Full Width */}
