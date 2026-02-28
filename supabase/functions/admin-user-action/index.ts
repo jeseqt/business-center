@@ -49,7 +49,9 @@ serve(async (req) => {
       }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { user_id, action } = await req.json();
+    // Parse JSON once and reuse for all branches
+    const payload = await req.json();
+    const { user_id, action } = payload || {};
 
     if (!user_id || !action) {
       return new Response(JSON.stringify({ error: 'Missing parameters' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -163,7 +165,7 @@ serve(async (req) => {
         }
 
         const authUserId = targetUser.external_user_id;
-        const { password } = await req.json();
+        const { password } = payload || {};
 
         if (!password || password.length < 6) {
             return new Response(JSON.stringify({ error: 'Invalid password. Must be at least 6 characters.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

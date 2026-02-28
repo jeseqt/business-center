@@ -54,60 +54,225 @@ export default function UserHome({ session }: UserHomeProps) {
       setError(null);
       setTransactionsLoading(true);
       
+      const withTimeout = async (promise: PromiseLike<any>, ms: number, label: string) => {
+        const timeoutPromise = new Promise((_, reject) => {
+          const id = setTimeout(() => {
+            clearTimeout(id);
+            reject(new Error(`${label} timed out after ${ms}ms`));
+          }, ms);
+        });
+
+        try {
+          const result = await Promise.race([promise, timeoutPromise]);
+          return result;
+        } catch (error) {
+          console.error(`[UserHome] ${label} failed/timed out:`, error);
+          throw error;
+        }
+      };
+
+      const collectDiagnostics = async () => {
+        let diagInfo = '';
+        try {
+          const schemaRes = await withTimeout(
+            supabase.rpc('debug_schema_info', { p_table: 'platform_users', p_column: 'external_user_id' }),
+            6000,
+            'Debug schema'
+          );
+          if (!schemaRes.error && schemaRes.data) {
+            diagInfo += `schema:${schemaRes.data}`;
+          }
+        } catch (schemaErr) {
+          console.warn('[UserHome] Diagnostics schema failed:', schemaErr);
+        }
+
+        try {
+          const dbRes = await withTimeout(
+            supabase.rpc('debug_database_state'),
+            6000,
+            'Debug database state'
+          );
+          if (!dbRes.error && dbRes.data) {
+            const locks = Array.isArray(dbRes.data.locks) ? dbRes.data.locks.length : 0;
+            const queries = Array.isArray(dbRes.data.queries) ? dbRes.data.queries.length : 0;
+            diagInfo += `${diagInfo ? ' ' : ''}locks:${locks} queries:${queries}`;
+          }
+        } catch (dbErr) {
+          console.warn('[UserHome] Diagnostics db failed:', dbErr);
+        }
+
+        return diagInfo;
+      };
+
+      let lastStage = 'init';
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+      let restProbeNote = '';
+
       // Global timeout for the entire operation
       fetchTimeoutTimer = setTimeout(() => {
         if (mounted && loading) {
             console.warn('[UserHome] Global fetch timeout reached (30s)');
-            setLoading(false);
-            setError('请求超时，请检查网络连接');
+            void (async () => {
+              const diagInfo = await collectDiagnostics();
+              setLoading(false);
+              setError(`请求超时，请检查网络连接${lastStage ? `（stage:${lastStage}` : ''}${diagInfo ? ` ${diagInfo}` : ''}）`);
+            })();
         }
       }, 30000);
 
       // Pre-flight check: Ensure connection is ready
-      // This helps avoid race conditions immediately after refresh
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       try {
-        // Wrapper for timeouts
-        const withTimeout = async (promise: PromiseLike<any>, ms: number, label: string) => {
-            const timeoutPromise = new Promise((_, reject) => {
-                const id = setTimeout(() => {
-                    clearTimeout(id);
-                    reject(new Error(`${label} timed out after ${ms}ms`));
-                }, ms);
-            });
+        let activeSession = session;
 
-            try {
-                const result = await Promise.race([promise, timeoutPromise]);
-                return result;
-            } catch (error) {
-                console.error(`[UserHome] ${label} failed/timed out:`, error);
-                throw error;
+        const ensureValidSession = async () => {
+            lastStage = 'session';
+            // 优先使用父组件传入的 session，避免刷新后重复等待
+            if (activeSession?.user) {
+                // 已有有效会话，直接使用
+            } else {
+                // 尝试快速获取一次会话
+                const { data: { session: s1 } } = await supabase.auth.getSession();
+                if (s1?.user) {
+                    activeSession = s1;
+                } else {
+                    // 简短轮询 3s，避免长时间阻塞首屏
+                    const start = Date.now();
+                    while (Date.now() - start < 3000) {
+                        const { data: { session: s } } = await supabase.auth.getSession();
+                        if (s?.user) {
+                            activeSession = s;
+                            break;
+                        }
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                }
+            }
+
+            // 如仍无用户信息，尝试刷新令牌
+            if (!activeSession?.user) {
+                const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+                if (refreshError || !refreshData?.session) {
+                    throw refreshError || new Error('会话已失效');
+                }
+                activeSession = refreshData.session;
+            }
+
+            if (mounted && activeSession?.user) {
+                setUser(activeSession.user);
             }
         };
 
-        // 1. Try RPC first (Fastest path)
-        console.log('[UserHome] Attempting RPC fetch (v2.1 - with refresh)...');
+        const probeRestApi = async () => {
+            lastStage = 'rest-probe';
+            if (!supabaseUrl || !supabaseAnonKey) {
+                throw new Error('缺少 Supabase 配置');
+            }
+            const keyParts = supabaseAnonKey.split('.');
+            const keyType = keyParts.length === 3 ? 'jwt' : 'non-jwt';
+            const headers: Record<string, string> = {
+                apikey: supabaseAnonKey,
+                Authorization: `Bearer ${activeSession?.access_token || supabaseAnonKey}`
+            };
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            try {
+                const res = await fetch(
+                    `${supabaseUrl}/rest/v1/platform_apps?select=id&limit=1`,
+                    { headers, signal: controller.signal }
+                );
+                if (!res.ok) {
+                    throw new Error(`REST ${res.status} (${keyType})`);
+                }
+                restProbeNote = `rest:ok(${keyType})`;
+            } catch (e: any) {
+                if (e?.name === 'AbortError') {
+                    restProbeNote = `rest-timeout(${keyType})`;
+                    throw new Error(`REST timeout (${keyType})`);
+                }
+                restProbeNote = `rest-error:${e?.message || 'unknown'} (${keyType})`;
+                throw e;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        };
+
+        const probeTableApi = async (uid: string) => {
+            lastStage = 'rest-probe-platform_users';
+            if (!supabaseUrl || !supabaseAnonKey) return;
+            const headers: Record<string, string> = {
+                apikey: supabaseAnonKey,
+                Authorization: `Bearer ${activeSession?.access_token || supabaseAnonKey}`
+            };
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            try {
+                const url = `${supabaseUrl}/rest/v1/platform_users?select=id&external_user_id=eq.${uid}&limit=1`;
+                const res = await fetch(url, { headers, signal: controller.signal });
+                if (!res.ok) {
+                    restProbeNote += ` table:${res.status}`;
+                } else {
+                    restProbeNote += ` table:ok`;
+                }
+            } catch (e: any) {
+                restProbeNote += ` table:${e?.name === 'AbortError' ? 'timeout' : 'error'}`;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        };
+
+        const restGet = async (path: string, label: string) => {
+            if (!supabaseUrl || !supabaseAnonKey) {
+                throw new Error('缺少 Supabase 配置');
+            }
+            const headers: Record<string, string> = {
+                apikey: supabaseAnonKey,
+                Authorization: `Bearer ${activeSession?.access_token || supabaseAnonKey}`
+            };
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            try {
+                const res = await fetch(`${supabaseUrl}${path}`, { headers, signal: controller.signal });
+                if (!res.ok) {
+                    throw new Error(`${label} REST ${res.status}`);
+                }
+                return await res.json();
+            } catch (e: any) {
+                if (e?.name === 'AbortError') {
+                    throw new Error(`${label} REST timeout`);
+                }
+                throw e;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        };
+
+        // Wrapper for timeouts
+        // 1. Try RPC once, fallback quickly if it is slow
+        console.log('[UserHome] Attempting RPC fetch (fast path)...');
+        lastStage = 'rpc';
         
         let dashboardData = null;
         let rpcError = null;
         
         // Ensure session is fresh before RPC
-        const { error: refreshError } = await supabase.auth.getSession();
-        if (refreshError) console.warn('[UserHome] Session refresh warning:', refreshError);
+        try {
+            await ensureValidSession();
+            await probeRestApi();
+        } catch (sessionErr) {
+            console.warn('[UserHome] Session validation failed:', sessionErr);
+            throw sessionErr;
+        }
 
         // Retry logic loop
-        const MAX_RETRIES = 2;
+        const MAX_RETRIES = 1;
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
             if (!mounted) break;
             
             try {
-                // Exponential backoff for retries: 8s, 15s
-                const timeoutMs = attempt === 1 ? 8000 : 15000;
-                if (attempt > 1) {
-                    console.log(`[UserHome] Retrying RPC (Attempt ${attempt})...`);
-                    await new Promise(r => setTimeout(r, 1000 * attempt));
-                }
+                const timeoutMs = 3000;
 
                 const result = await withTimeout(
                     supabase.rpc('get_or_create_user_dashboard_data'),
@@ -146,21 +311,91 @@ export default function UserHome({ session }: UserHomeProps) {
             return;
         }
         
-        // If RPC failed after retries, show error. 
-        // We removed the manual fallback because if RPC fails (timeout/network), 
-        // manual fetch will likely fail too, and just adds confusion.
         if (rpcError) {
-             throw rpcError;
+            try {
+                lastStage = 'fallback-platform_user';
+                const uid = activeSession?.user?.id;
+                if (!uid) {
+                    throw new Error('会话已失效');
+                }
+                // REST 直连表探针（不阻断主流程）
+                void (async () => {
+                    if (uid) await probeTableApi(uid);
+                })();
+                const platformUserList = await withTimeout(
+                    restGet(
+                        `/rest/v1/platform_users?${new URLSearchParams({
+                            select: '*',
+                            external_user_id: `eq.${uid}`,
+                            limit: '1'
+                        }).toString()}`,
+                        'platform_user fetch'
+                    ),
+                    8000,
+                    'Direct platform_user fetch'
+                );
+                const pu = Array.isArray(platformUserList) ? platformUserList[0] : null;
+                if (!pu) {
+                    throw new Error('未找到用户档案');
+                }
+                lastStage = 'fallback-wallet';
+                const walletList = await withTimeout(
+                    restGet(
+                        `/rest/v1/platform_wallets?${new URLSearchParams({
+                            select: '*',
+                            platform_user_id: `eq.${pu.id}`,
+                            limit: '1'
+                        }).toString()}`,
+                        'wallet fetch'
+                    ),
+                    8000,
+                    'Direct wallet fetch'
+                );
+                const w = Array.isArray(walletList) ? walletList[0] : null;
+                if (!w || !w.id) {
+                    if (mounted) {
+                        setWallet(null);
+                        setTransactions([]);
+                        setLoading(false);
+                        setTransactionsLoading(false);
+                        return;
+                    }
+                }
+                lastStage = 'fallback-transactions';
+                const txList = await withTimeout(
+                    restGet(
+                        `/rest/v1/platform_wallet_transactions?${new URLSearchParams({
+                            select: '*',
+                            wallet_id: `eq.${w.id}`,
+                            order: 'created_at.desc',
+                            limit: '5'
+                        }).toString()}`,
+                        'transactions fetch'
+                    ),
+                    8000,
+                    'Direct transactions fetch'
+                );
+                if (mounted) {
+                    setWallet(w);
+                    setTransactions(Array.isArray(txList) ? txList : []);
+                    setLoading(false);
+                    setTransactionsLoading(false);
+                    return;
+                }
+            } catch (fbErr) {
+                throw fbErr;
+            }
         }
 
       } catch (err: any) {
         console.error('[UserHome] Critical error:', err);
         if (mounted) {
+            const diagInfo = await collectDiagnostics();
             setLoading(false);
             // Friendly error message
             let msg = err.message || '未知错误';
             if (msg.includes('timeout')) msg = '网络连接超时，请刷新重试';
-            setError(`数据加载失败: ${msg}`);
+            setError(`数据加载失败: ${msg}${lastStage ? `（stage:${lastStage}` : ''}${diagInfo ? ` ${diagInfo}` : ''}${restProbeNote ? ` ${restProbeNote}` : ''}）`);
         }
       } finally {
         if (mounted && loading) setLoading(false);

@@ -3,7 +3,7 @@
 
 -- 1. 允许用户查看自己的 platform_users 记录
 create policy "Users can view own profile" on public.platform_users
-    for select using (external_user_id = auth.uid()::text);
+    for select using (external_user_id = auth.uid()::uuid);
 
 -- 2. 允许用户查看自己的钱包 (通过关联 platform_users)
 create policy "Users can view own wallet" on public.platform_wallets
@@ -11,7 +11,7 @@ create policy "Users can view own wallet" on public.platform_wallets
         exists (
             select 1 from public.platform_users
             where id = platform_wallets.platform_user_id
-            and external_user_id = auth.uid()::text
+            and external_user_id = auth.uid()::uuid
         )
     );
 
@@ -22,7 +22,7 @@ create policy "Users can view own transactions" on public.platform_wallet_transa
             select 1 from public.platform_wallets
             join public.platform_users on platform_users.id = platform_wallets.platform_user_id
             where platform_wallets.id = platform_wallet_transactions.wallet_id
-            and platform_users.external_user_id = auth.uid()::text
+            and platform_users.external_user_id = auth.uid()::uuid
         )
     );
 
@@ -32,7 +32,7 @@ create policy "Users can view own orders" on public.platform_orders
         exists (
             select 1 from public.platform_users
             where id = platform_orders.platform_user_id
-            and external_user_id = auth.uid()::text
+            and external_user_id = auth.uid()::uuid
         )
     );
     
@@ -42,6 +42,6 @@ create policy "Users can view own token usage" on public.platform_token_usage
         exists (
             select 1 from public.platform_users
             where id = platform_token_usage.platform_user_id
-            and external_user_id = auth.uid()::text
+            and external_user_id = auth.uid()::uuid
         )
     );

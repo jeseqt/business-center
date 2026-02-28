@@ -1,18 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Outlet, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
-import UserManagement from './UserManagement';
-import OrderManagement from './OrderManagement';
-import InviteManagement from './InviteManagement';
-import AppManagement from './AppManagement';
-import UsageReports from './UsageReports';
-import ConfigManagement from './ConfigManagement';
-import VersionManagement from './VersionManagement';
-import NotificationManagement from './NotificationManagement';
-import TicketManagement from './TicketManagement';
-import BannerManagement from './BannerManagement';
-import ProfileSettings from './ProfileSettings';
 import { 
   Users, CreditCard, Ticket, LogOut,
   Bell, Settings, Image as ImageIcon,
@@ -22,7 +11,7 @@ import {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'users' | 'orders' | 'invites' | 'apps' | 'reports' | 'configs' | 'versions' | 'notifications' | 'tickets' | 'banners' | 'profile'>('users');
+  const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -54,6 +43,10 @@ export default function Dashboard() {
     { id: 'versions', label: '版本发布管理', icon: GitBranch },
   ] as const;
 
+  const tabIds = new Set<string>([...navItems.map(item => item.id), 'profile']);
+  const pathParts = location.pathname.split('/');
+  const pathTab = pathParts[2];
+  const activeTab = tabIds.has(pathTab) ? pathTab : 'users';
   const activeItem = navItems.find(item => item.id === activeTab);
 
   const handleGlobalSearch = () => {
@@ -66,7 +59,7 @@ export default function Dashboard() {
     );
 
     if (found) {
-      setActiveTab(found.id);
+      navigate(`/dashboard/${found.id}`);
       setSearchQuery('');
     }
   };
@@ -116,7 +109,7 @@ export default function Dashboard() {
               <button
                 key={item.id}
                 onClick={() => {
-                  setActiveTab(item.id);
+                  navigate(`/dashboard/${item.id}`);
                   setIsMobileOpen(false);
                 }}
                 className={`
@@ -154,7 +147,7 @@ export default function Dashboard() {
         <div className="p-4 border-t border-slate-800/50 bg-slate-900/50">
           <div 
             className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'} p-2 rounded-xl hover:bg-slate-800 transition-colors cursor-pointer group ${activeTab === 'profile' ? 'bg-slate-800' : ''}`}
-            onClick={() => setActiveTab('profile')}
+            onClick={() => navigate('/dashboard/profile')}
           >
             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-400 to-brand-600 flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
               {currentUser?.email?.[0].toUpperCase() || 'A'}

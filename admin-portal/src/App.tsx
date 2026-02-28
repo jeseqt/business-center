@@ -20,7 +20,9 @@ import ProfileSettings from './pages/ProfileSettings';
 function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const cachedAdmin = typeof window !== 'undefined' ? localStorage.getItem('bc:isAdmin') : null;
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(cachedAdmin === 'true' ? true : cachedAdmin === 'false' ? false : null);
+  const [holdForAdmin, setHoldForAdmin] = useState<boolean>(cachedAdmin === 'true');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
 
   // 如果未配置环境变量，显示提示页面
@@ -36,14 +38,13 @@ function App() {
   useEffect(() => {
     let mounted = true;
     
-    // 全局兜底：10秒后强制结束加载，防止页面永久卡死
     const forceLoadTimer = setTimeout(() => {
       if (mounted) {
         console.warn('Force loading timeout reached');
         setLoading(false);
         setDebugStatus('Timeout reached, forcing load...');
       }
-    }, 8000);
+    }, 4000);
 
     const initSession = async () => {
       try {
@@ -58,8 +59,15 @@ function App() {
         if (mounted) {
           setSession(session);
           if (session) {
-            setDebugStatus(`User found (${session.user.email}), checking role...`);
-            await checkAdminRole(session.user.id);
+            setDebugStatus(`User found (${session.user.email})`);
+            if (holdForAdmin) {
+              setLoading(true);
+            } else {
+              setLoading(false);
+            }
+            void checkAdminRole(session.user.id).catch((e) => {
+              console.warn('Async role check failed:', e);
+            });
           } else {
             setDebugStatus('No session found');
             setLoading(false);
@@ -86,16 +94,14 @@ function App() {
       
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (session) {
-          // 只有在当前不是 loading 状态，或者还是初始状态时才重新检查
-          // 避免和 initSession 冲突导致闪烁
-          await checkAdminRole(session.user.id);
+          void checkAdminRole(session.user.id);
         }
       } else if (event === 'SIGNED_OUT') {
         console.log('User signed out, clearing state');
-        // Only clear if session is truly null (explicit sign out)
         if (!session) {
             localStorage.clear();
             sessionStorage.clear();
+            localStorage.removeItem('bc:isAdmin');
             setSession(null);
             setLoading(false);
             setIsAdmin(false);
@@ -116,9 +122,8 @@ function App() {
   async function checkAdminRole(userId: string) {
     try {
       setDebugStatus('Verifying admin privileges...');
-      // 设置超时，防止 RLS 死锁
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
 
       const { data, error } = await supabase
         .from('platform_admin_profiles')
@@ -131,14 +136,12 @@ function App() {
 
       if (data && !error) {
         setIsAdmin(true);
+        localStorage.setItem('bc:isAdmin', 'true');
         setDebugStatus('Admin role confirmed');
       } else {
-        // Only set to false if we successfully queried but found no admin profile
-        // or if it's the initial load.
-        // If we are already logged in (loading=false) and just refreshing token,
-        // a network error shouldn't kick us out immediately.
         if (loading || !error) {
            setIsAdmin(false);
+           localStorage.setItem('bc:isAdmin', 'false');
            setDebugStatus('User role confirmed (or error during init)');
         } else {
            console.warn('Check admin role failed during session refresh, keeping previous state', error);
@@ -153,13 +156,15 @@ function App() {
         console.error('Error checking admin role:', e);
         setDebugStatus(`Role check error: ${e.message}`);
       }
-      
-      // Only reset admin status on initial load or if explicitly failed
       if (loading) {
         setIsAdmin(false);
+        localStorage.setItem('bc:isAdmin', 'false');
       }
     } finally {
-      setLoading(false);
+      if (holdForAdmin) {
+        setHoldForAdmin(false);
+        setLoading(false);
+      }
     }
   }
 
@@ -179,7 +184,14 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={
-          !session ? <Login /> : (isAdmin ? <Navigate to="/dashboard" replace /> : <Navigate to="/user" replace />)
+          !session ? <Login /> : (
+            isAdmin === true ? <Navigate to="/dashboard" replace /> :
+            isAdmin === false ? <Navigate to="/user" replace /> :
+            <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 space-y-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="text-gray-500 text-sm font-medium">Verifying admin privileges...</div>
+            </div>
+          )
         } />
         
         <Route path="/dashboard" element={
