@@ -1,10 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 function generateSecret() {
   const array = new Uint8Array(24);
@@ -146,7 +142,7 @@ serve(async (req) => {
           .from('platform_apps')
           .update(updateData)
           .eq('id', app_id)
-          .select()
+          .select('id, name, description, status, app_key, app_secret_hash, invite_required, created_at, updated_at')
           .single();
 
         if (error) throw error;

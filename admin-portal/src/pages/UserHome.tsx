@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { BannerCarousel } from '../components/BannerCarousel';
-import { User, LogOut, Wallet, History, Loader2, AlertCircle } from 'lucide-react';
+import { User, LogOut, Wallet, History, Loader2, AlertCircle, Plus } from 'lucide-react';
 import { PlatformWallet, PlatformWalletTransaction } from '../types/shared';
 import { Session } from '@supabase/supabase-js';
+import { RechargeDialog } from '../components/RechargeDialog';
 
 interface UserHomeProps {
   session: Session | null;
@@ -17,6 +18,16 @@ export default function UserHome({ session }: UserHomeProps) {
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showRecharge, setShowRecharge] = useState(false);
+
+  useEffect(() => {
+    // Check for recharge success
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('status') === 'success') {
+      window.history.replaceState({}, '', window.location.pathname);
+      // Optional: Show success toast
+    }
+  }, []);
 
   useEffect(() => {
     // Sync user state with session prop if it changes
@@ -71,39 +82,6 @@ export default function UserHome({ session }: UserHomeProps) {
         }
       };
 
-      const collectDiagnostics = async () => {
-        let diagInfo = '';
-        try {
-          const schemaRes = await withTimeout(
-            supabase.rpc('debug_schema_info', { p_table: 'platform_users', p_column: 'external_user_id' }),
-            6000,
-            'Debug schema'
-          );
-          if (!schemaRes.error && schemaRes.data) {
-            diagInfo += `schema:${schemaRes.data}`;
-          }
-        } catch (schemaErr) {
-          console.warn('[UserHome] Diagnostics schema failed:', schemaErr);
-        }
-
-        try {
-          const dbRes = await withTimeout(
-            supabase.rpc('debug_database_state'),
-            6000,
-            'Debug database state'
-          );
-          if (!dbRes.error && dbRes.data) {
-            const locks = Array.isArray(dbRes.data.locks) ? dbRes.data.locks.length : 0;
-            const queries = Array.isArray(dbRes.data.queries) ? dbRes.data.queries.length : 0;
-            diagInfo += `${diagInfo ? ' ' : ''}locks:${locks} queries:${queries}`;
-          }
-        } catch (dbErr) {
-          console.warn('[UserHome] Diagnostics db failed:', dbErr);
-        }
-
-        return diagInfo;
-      };
-
       let lastStage = 'init';
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -114,9 +92,8 @@ export default function UserHome({ session }: UserHomeProps) {
         if (mounted && loading) {
             console.warn('[UserHome] Global fetch timeout reached (30s)');
             void (async () => {
-              const diagInfo = await collectDiagnostics();
               setLoading(false);
-              setError(`请求超时，请检查网络连接${lastStage ? `（stage:${lastStage}` : ''}${diagInfo ? ` ${diagInfo}` : ''}）`);
+              setError(`请求超时，请检查网络连接${lastStage ? `（stage:${lastStage}）` : ''}`);
             })();
         }
       }, 30000);
@@ -464,11 +441,31 @@ export default function UserHome({ session }: UserHomeProps) {
                     <Wallet className="w-5 h-5 text-brand-600" />
                   </div>
                   <h2 className="text-lg font-bold text-slate-900">我的钱包</h2>
-                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => setShowRecharge(true)}
+                  disabled={loading || !wallet}
+                  className="bg-brand-50 text-brand-600 border-brand-200 hover:bg-brand-100 hover:text-brand-700"
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  充值
+                </Button>
                 <div className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100">
                   最后同步: {wallet ? new Date(wallet.updated_at).toLocaleTimeString() : '--:--:--'}
                 </div>
               </div>
+            </div>
+
+            {wallet && (
+              <RechargeDialog 
+                open={showRecharge} 
+                onOpenChange={setShowRecharge}
+                appId={wallet.app_id}
+              />
+            )}
 
               <div className="grid grid-cols-2 gap-4 relative">
                 <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 hover:border-brand-500/30 transition-colors group/card">

@@ -1,0 +1,11 @@
+ID,Type,Severity,Description,File,Status,Remediation
+SEC-001,Security,Critical,App Secret stored in plaintext and returned in API,supabase/functions/admin-app-manage/index.ts,Fixed,Restricted API response; validated usage
+SEC-002,Security,Critical,Debug RPC calls exposed in production frontend,admin-portal/src/pages/UserHome.tsx,Fixed,Removed collectDiagnostics and RPC calls
+ARCH-001,Architecture,High,Inconsistent CORS configuration across functions,supabase/functions/_shared/cors.ts,Fixed,Created shared CORS module and applied to all functions
+PERF-001,Performance,High,N+1 Query in User List (Wallet Fetching),supabase/functions/admin-user-list/index.ts,Fixed,Refactored to use SQL join (PostgREST embedding)
+STAB-001,Stability,Medium,Frontend Lint command failure,admin-portal/package.json,Fixed,Corrected command syntax for cross-platform compatibility
+QUAL-001,Quality,Low,Console logs in production code,Multiple Files,Open,Review and replace with proper logging library or remove
+SEC-003,Security,Medium,App Secret column exists in DB (Plaintext),Database Schema,Open,Consider hashing or encryption if plaintext not required for signing
+OPS-001,Ops,Medium,No centralized error monitoring,Global,Open,Integrate Sentry or similar
+SEC-004,Security,High,RLS Policies need comprehensive audit,Database Schema,Open,Review all RLS policies for potential leaks
+ARCH-002,Architecture,Medium,Lack of shared types between frontend/backend,Global,Open,Implement type generation from DB schema

@@ -36,3 +36,6 @@ enable_confirmations = true
 enabled = true
 policy = "per_worker"
 inspector_port = 8083
+
+[functions.bagelpay-webhook]
+verify_jwt = false

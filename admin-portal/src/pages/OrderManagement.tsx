@@ -16,10 +16,23 @@ export default function OrderManagement() {
   const [selectedAppId, setSelectedAppId] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [keyword, setKeyword] = useState('');
+  const [stats, setStats] = useState<any>(null);
 
   const loadApps = async () => {
     const { data } = await supabase.from('platform_apps').select('id, name').order('name');
     setApps(data || []);
+  };
+
+  const loadStats = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_recharge_stats', { 
+        _app_id: selectedAppId || null 
+      });
+      if (error) throw error;
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to load stats:', err);
+    }
   };
 
   const loadData = async () => {
@@ -85,6 +98,7 @@ export default function OrderManagement() {
 
   useEffect(() => { loadApps(); }, []);
   useEffect(() => { loadData(); }, [activeTab, page, selectedAppId, statusFilter]);
+  useEffect(() => { loadStats(); }, [selectedAppId]);
 
   const getStatusBadge = (status: string) => {
     const colors: Record<string, any> = {
@@ -106,6 +120,23 @@ export default function OrderManagement() {
         description="监控全平台充值订单与钱包交易流水"
         icon={CreditCard}
       />
+
+      {activeTab === 'orders' && stats && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card className="p-4 flex flex-col justify-center bg-gradient-to-br from-indigo-50 to-white border-indigo-100">
+            <div className="text-sm font-medium text-indigo-600 mb-1">今日充值</div>
+            <div className="text-2xl font-bold text-gray-900">${(stats.today_amount / 100).toFixed(2)}</div>
+          </Card>
+          <Card className="p-4 flex flex-col justify-center bg-gradient-to-br from-emerald-50 to-white border-emerald-100">
+            <div className="text-sm font-medium text-emerald-600 mb-1">本月充值</div>
+            <div className="text-2xl font-bold text-gray-900">${(stats.month_amount / 100).toFixed(2)}</div>
+          </Card>
+          <Card className="p-4 flex flex-col justify-center bg-gradient-to-br from-blue-50 to-white border-blue-100">
+            <div className="text-sm font-medium text-blue-600 mb-1">累计充值 ({stats.total_count}笔)</div>
+            <div className="text-2xl font-bold text-gray-900">${(stats.total_amount / 100).toFixed(2)}</div>
+          </Card>
+        </div>
+      )}
 
       <div className="flex border-b border-gray-200">
         <button
