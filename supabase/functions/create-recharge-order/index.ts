@@ -14,20 +14,32 @@ serve(async (req) => {
     if (!authHeader) {
       throw new Error('Missing Authorization header');
     }
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer /i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
     if (userError || !user) {
       console.error('Auth error:', userError);
-      throw new Error('Invalid user token');
+      return new Response(
+        JSON.stringify({ 
+            error: `Invalid user token: ${userError?.message || 'User not found'}`,
+            debug: {
+                token_prefix: token.substring(0, 10) + '...',
+                error_details: userError
+            }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+      );
     }
 
-    // 2. Parse Body
+    // 2. Parse request body
     const { amount, app_id, return_url, product_id } = await req.json();
 
     if (!app_id) {
         throw new Error('Missing app_id');
     }
+    
+    // Debug info for type checking
+    console.log(`Debug types: user.id=${typeof user.id} (${user.id}), app_id=${typeof app_id} (${app_id})`);
 
     // 3. Verify User belongs to App
     const { data: platformUser, error: platformUserError } = await supabase
@@ -35,11 +47,25 @@ serve(async (req) => {
       .select('id, external_user_id')
       .eq('app_id', app_id)
       .eq('external_user_id', user.id)
-      .single();
+      .maybeSingle(); // 使用 maybeSingle 避免 .single() 在找不到时报错
 
-    if (platformUserError || !platformUser) {
-      console.error('Platform user check failed:', platformUserError);
-      throw new Error('User not registered in this app context');
+    if (platformUserError) {
+        console.error('Platform User Query Error:', platformUserError);
+        throw new Error(`Database error querying user: ${platformUserError.message}`);
+    }
+
+    if (!platformUser) {
+        // 如果找不到用户，尝试只用 external_user_id 查一下，看是不是 app_id 不匹配
+        const { data: userAnyApp } = await supabase
+            .from('platform_users')
+            .select('app_id')
+            .eq('external_user_id', user.id)
+            .limit(1)
+            .maybeSingle();
+            
+        console.error(`User not found for app_id: ${app_id}. User exists in app: ${userAnyApp?.app_id || 'none'}`);
+        
+        throw new Error(`User not registered for this app (app_id: ${app_id}). Please refresh dashboard.`);
     }
 
     // 4. Resolve Product Info
@@ -165,15 +191,63 @@ serve(async (req) => {
       checkoutUrl = successUrl;
       
     } else {
-      // REAL BAGELPAY MODE
-      const isTestMode = Deno.env.get('BAGELPAY_TEST_MODE') !== 'false';
-      const bagelPayUrl = isTestMode
-        ? 'https://test.bagelpay.io/api/payments/checkouts'
-        : 'https://live.bagelpay.io/api/payments/checkouts';
+      // Helper to convert to snake_case
+      const toSnakeCase = (obj: any) => {
+        const newObj: any = {};
+        for (const key in obj) {
+          const newKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+          newObj[newKey] = obj[key];
+        }
+        return newObj;
+      };
 
-      // Base payload with common fields
-      const basePayload = {
-        request_id: merchantOrderNo, // Restore request_id as per doc
+      const isTestMode = Deno.env.get('BAGELPAY_TEST_MODE') !== 'false';
+      const baseUrl = isTestMode ? 'https://test.bagelpay.io' : 'https://live.bagelpay.io';
+
+      // 1. Ensure we have a product_id
+      if (!bagelPayProductId) {
+        console.log('No pre-defined product ID. Creating dynamic product...');
+        const createProductUrl = `${baseUrl}/api/products/create`;
+        
+        const productPayload = {
+          name: finalProductName,
+          description: finalProductDesc,
+          price: finalAmount,
+          currency: 'USD',
+          billingType: 'single_payment',
+          taxInclusive: true,
+          taxCategory: 'digital_products',
+          recurringInterval: null,
+          trialDays: 0
+        };
+
+        const productResponse = await fetch(createProductUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': bagelPayApiKey
+          },
+          body: JSON.stringify(toSnakeCase(productPayload))
+        });
+
+        if (!productResponse.ok) {
+           const errText = await productResponse.text();
+           console.error('Failed to create dynamic product:', errText);
+           throw new Error('Payment provider error: Failed to create dynamic product. ' + errText);
+        }
+
+        const productData = await productResponse.json();
+        const productResult = productData.data || productData;
+        bagelPayProductId = productResult.product_id;
+        console.log('Created dynamic product:', bagelPayProductId);
+      }
+
+      // 2. Create Checkout
+      const checkoutUrlEndpoint = `${baseUrl}/api/payments/checkouts`;
+      
+      const checkoutPayload = {
+        productId: bagelPayProductId,
+        requestId: merchantOrderNo,
         customer: {
           email: user.email || 'customer@example.com'
         },
@@ -184,35 +258,18 @@ serve(async (req) => {
           order_no: merchantOrderNo,
           app_id: app_id
         },
-        success_url: successUrl
+        successUrl: successUrl
       };
 
-      let requestBody: any = { ...basePayload };
+      console.log(`Calling BagelPay Checkout API: ${checkoutUrlEndpoint}`, JSON.stringify(toSnakeCase(checkoutPayload)));
 
-      // If we have a pre-defined product in BagelPay, use it exclusively
-      if (bagelPayProductId) {
-        requestBody.product_id = bagelPayProductId;
-      } else {
-        // Dynamic pricing flow
-        requestBody.amount = {
-          value: amountCents,
-          currency: 'USD'
-        };
-        requestBody.product = {
-          name: finalProductName,
-          description: finalProductDesc
-        };
-      }
-
-      console.log(`Calling BagelPay API: ${bagelPayUrl}`, JSON.stringify(requestBody));
-
-      const checkoutResponse = await fetch(bagelPayUrl, {
+      const checkoutResponse = await fetch(checkoutUrlEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': bagelPayApiKey
         },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(toSnakeCase(checkoutPayload))
       });
 
       if (!checkoutResponse.ok) {

@@ -15,5 +15,8 @@
   "license": "ISC",
   "devDependencies": {
     "supabase": "^2.75.1"
+  },
+  "dependencies": {
+    "bagelpay": "^1.0.6"
   }
 }

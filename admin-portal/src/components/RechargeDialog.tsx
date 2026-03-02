@@ -55,8 +55,14 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
     setLoading(true);
     setError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('请先登录');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) throw new Error('请先登录');
+      
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) throw new Error('会话已过期，请刷新页面');
+      
+      const currentSession = refreshData.session || session;
+      const token = currentSession.access_token;
 
       const returnUrl = `${window.location.origin}/dashboard/wallet?status=success`;
 
@@ -69,26 +75,38 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
 
       console.log('Initiating recharge request...', requestPayload);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-recharge-order`, {
-        method: 'POST',
+      const { data: result, error: invokeError } = await supabase.functions.invoke('create-recharge-order', {
+        body: requestPayload,
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(requestPayload)
+            Authorization: `Bearer ${token}`
+        }
       });
 
-      let result;
-      const text = await response.text();
-      
-      try {
-        result = JSON.parse(text);
-      } catch (e) {
-        throw new Error(`服务器响应格式错误: ${text.substring(0, 50)}...`);
-      }
-      
-      if (!response.ok) {
-        throw new Error(result.error || `请求失败 (${response.status})`);
+
+      if (invokeError) {
+        console.error('Invoke Error Details:', invokeError);
+        // 尝试解析更详细的错误信息
+        let errorMessage = invokeError.message || '调用支付服务失败';
+        
+        if (invokeError && typeof invokeError === 'object' && 'context' in invokeError) {
+             // @ts-ignore
+             const response = invokeError.context;
+             if (response && typeof response.text === 'function') {
+                 try {
+                    const text = await response.text();
+                    console.log('Error Response Body:', text);
+                    try {
+                        const json = JSON.parse(text);
+                        errorMessage = json.error || json.message || text;
+                    } catch {
+                        errorMessage = text.substring(0, 100);
+                    }
+                 } catch (readError) {
+                    console.warn('Failed to read error response body:', readError);
+                 }
+             }
+        }
+        throw new Error(errorMessage);
       }
 
       if (result.data?.payment_url) {

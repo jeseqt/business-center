@@ -49,6 +49,21 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   const [timeLeft, setTimeLeft] = useState<{hours: number, minutes: number, seconds: number}>({ hours: 0, minutes: 0, seconds: 0 });
 
   useEffect(() => {
+    console.log('RechargePanel initialized with appId:', appId);
+    if (!appId) {
+      console.error('RechargePanel mounted without appId');
+      setError('系统配置错误：缺少应用ID (appId)');
+    } else {
+        // Simple UUID validation
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(appId)) {
+            console.warn('Potential UUID mismatch: appId format looks invalid', appId);
+            // setError(`应用ID格式异常: ${appId}`); // Optional: force error
+        }
+    }
+  }, [appId]);
+
+  useEffect(() => {
     // Initialize countdown to end of day or specific time
     const calculateTimeLeft = () => {
       const now = new Date();
@@ -99,11 +114,31 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   };
 
   const handleRecharge = async () => {
+    if (!appId) {
+      setError('系统配置错误：缺少应用ID，无法充值');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('请先登录');
+      // 1. 确保会话有效 (强制刷新一次，避免 Invalid JWT)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error('请先登录');
+      }
+
+      // 检查 Token 是否临近过期 (比如剩余时间 < 60s)，或者直接尝试刷新
+      // 这里直接刷新以确保万无一失
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.warn('Session refresh warning:', refreshError);
+        // 如果刷新失败但原本有 session，尝试继续使用旧 session，或者抛出错误让用户重新登录
+        // 这里的策略是：如果刷新失败，很可能 token 已经失效了
+        throw new Error('会话已过期，请刷新页面或重新登录');
+      }
+
+      const currentSession = refreshData.session || session;
+      const token = currentSession.access_token;
 
       const returnUrl = `${window.location.origin}/dashboard/wallet?status=success`;
 
@@ -116,28 +151,49 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
 
       console.log('Initiating recharge request...', requestPayload);
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-recharge-order`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(requestPayload)
+      // 显式传递 Authorization 头，尽管 invoke 会自动处理，但在某些极端情况下（如 invoke 内部状态不一致）手动传递更稳妥
+      // update: 移除手动传递，让 supabase client 自动处理，避免 token 格式问题
+      const { data: result, error: invokeError } = await supabase.functions.invoke('create-recharge-order', {
+        body: requestPayload
       });
 
-      let result;
-      const text = await response.text();
-      
-      try {
-        result = JSON.parse(text);
-      } catch (e) {
-        throw new Error(`服务器响应格式错误: ${text.substring(0, 50)}...`);
-      }
-      
-      if (!response.ok) {
-        throw new Error(result.error || `请求失败 (${response.status})`);
-      }
 
+      if (invokeError) {
+        console.error('Invoke Error Details:', invokeError);
+        // 尝试解析更详细的错误信息
+        let errorMessage = invokeError.message || '调用支付服务失败';
+        
+        if (invokeError && typeof invokeError === 'object' && 'context' in invokeError) {
+             // @ts-ignore
+             const response = invokeError.context;
+             if (response && typeof response.text === 'function') {
+                 try {
+                    const text = await response.text();
+                    console.log('Error Response Body:', text);
+                    try {
+                        const json = JSON.parse(text);
+                        errorMessage = json.error || json.message || text;
+                    } catch {
+                        errorMessage = text.substring(0, 100);
+                    }
+                 } catch (readError) {
+                    console.warn('Failed to read error response body:', readError);
+                 }
+             }
+        }
+        
+        // 特殊处理 Invalid JWT
+        if (errorMessage.includes('Invalid JWT') || errorMessage.includes('jwt expired')) {
+             console.warn('Session invalid, forcing sign out...');
+             await supabase.auth.signOut();
+             localStorage.clear(); // 清除本地缓存，确保彻底退出
+             window.location.reload(); // 刷新页面以重置状态
+             return; // 停止执行
+        }
+
+        throw new Error(errorMessage);
+      }
+      
       if (result.data?.payment_url) {
         window.location.href = result.data.payment_url;
       } else {

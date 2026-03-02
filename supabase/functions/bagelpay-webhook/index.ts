@@ -241,6 +241,7 @@ serve(async (req) => {
         app_id, 
         platform_user_id,
         merchant_order_no,
+        metadata,
         platform_users!inner(external_user_id)
       `)
       .eq('merchant_order_no', orderNo)
@@ -276,6 +277,9 @@ serve(async (req) => {
     console.log(`Verifying amount. Order: ${order.amount}, Paid (parsed): ${paidAmount}, Raw:`, JSON.stringify(rawAmount));
 
     // order.amount is in cents
+    // If order.amount is points (e.g. 12), and paidAmount is cents (e.g. 1000), they won't match.
+    // BUT in create-recharge-order: amountCents = Math.round(finalAmount * 100); order.amount = amountCents.
+    // So order.amount IS cents (1000). Paid amount IS cents (1000). So they should match.
     if (isNaN(paidAmount) || paidAmount !== order.amount) {
       console.error(`Amount mismatch or parse error: Order ${order.amount} !== Paid ${paidAmount}`);
       // WARN ONLY: Do not fail the webhook for amount mismatch in production/test unless strict
@@ -302,10 +306,23 @@ serve(async (req) => {
     // 6. Credit Wallet
     const externalUserId = order.platform_users.external_user_id;
 
+    // Determine credit amount (points)
+    let creditAmount = order.amount; // default to amount if no metadata
+    if (order.metadata && typeof order.metadata.points === 'number') {
+        creditAmount = order.metadata.points;
+    } else if (order.metadata && typeof order.metadata.points === 'string') {
+        creditAmount = Number(order.metadata.points);
+    } else {
+        // Fallback: If no points metadata, assume 1 USD = 1 Point (amount is in cents)
+        creditAmount = Math.floor(order.amount / 100);
+    }
+
+    console.log(`Crediting wallet. Order Amount (cents): ${order.amount}, Credit Points: ${creditAmount}`);
+
     // Use explicit type casting if needed, but RPC now accepts text for user_id
     const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
       _user_id: externalUserId,
-      _amount: order.amount, // Positive amount for deposit
+      _amount: creditAmount, // Use calculated points
       _type: 'deposit',
       _app_id: order.app_id,
       _order_id: order.id,
