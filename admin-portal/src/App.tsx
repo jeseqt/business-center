@@ -7,6 +7,7 @@ import UserHome from './pages/UserHome';
 import StressTest from './pages/StressTest';
 import UserManagement from './pages/UserManagement';
 import AppManagement from './pages/AppManagement';
+import ProductManagement from './pages/ProductManagement';
 import OrderManagement from './pages/OrderManagement';
 import UsageReports from './pages/UsageReports';
 import InviteManagement from './pages/InviteManagement';
@@ -200,6 +201,7 @@ function App() {
           <Route index element={<Navigate to="users" replace />} />
           <Route path="users" element={<UserManagement />} />
           <Route path="apps" element={<AppManagement />} />
+          <Route path="products" element={<ProductManagement />} />
           <Route path="orders" element={<OrderManagement />} />
           <Route path="reports" element={<UsageReports />} />
           <Route path="invites" element={<InviteManagement />} />

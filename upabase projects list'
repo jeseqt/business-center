@@ -1,0 +1,5 @@
+user.name=CYX
+user.email=1281311628@qq.com
+credential.https://gitee.com.provider=generic
+credential.http://10.0.1.44.provider=generic
+safe.directory=E:/workspace/pquant

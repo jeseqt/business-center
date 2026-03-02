@@ -39,7 +39,11 @@ const DEFAULT_BANNERS: PlatformBanner[] = [
   }
 ];
 
-export function BannerCarousel() {
+interface BannerCarouselProps {
+  className?: string;
+}
+
+export function BannerCarousel({ className = '' }: BannerCarouselProps) {
   const [banners, setBanners] = useState<PlatformBanner[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -115,7 +119,7 @@ export function BannerCarousel() {
 
   if (loading) {
     return (
-      <div className="relative h-64 md:h-80 w-full overflow-hidden rounded-xl bg-slate-100 animate-pulse border border-slate-200 flex items-center justify-center">
+      <div className="relative h-64 lg:h-full w-full overflow-hidden rounded-xl bg-slate-100 animate-pulse border border-slate-200 flex items-center justify-center">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -127,7 +131,7 @@ export function BannerCarousel() {
   const isImageError = imageError[currentBanner.id];
 
   return (
-    <div className="relative h-64 md:h-80 w-full overflow-hidden rounded-xl group shadow-lg shadow-slate-200/50 border border-slate-100 bg-white">
+    <div className={`relative h-64 lg:h-full w-full overflow-hidden rounded-xl group shadow-lg shadow-slate-200/50 border border-slate-100 bg-white ${className}`}>
       {/* Background Image */}
       <div className="absolute inset-0 w-full h-full bg-slate-900">
         {!isImageError ? (

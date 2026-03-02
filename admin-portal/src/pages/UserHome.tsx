@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { BannerCarousel } from '../components/BannerCarousel';
-import { User, LogOut, Wallet, History, Loader2, AlertCircle, Plus } from 'lucide-react';
+import { User, LogOut, History, AlertCircle } from 'lucide-react';
 import { PlatformWallet, PlatformWalletTransaction } from '../types/shared';
 import { Session } from '@supabase/supabase-js';
-import { RechargeDialog } from '../components/RechargeDialog';
+import { RechargePanel } from '../components/RechargePanel';
+import { TransactionsDialog } from '../components/TransactionsDialog';
+import { LambertCoin } from '../components/LambertCoin';
 
 interface UserHomeProps {
   session: Session | null;
@@ -17,8 +19,8 @@ export default function UserHome({ session }: UserHomeProps) {
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
+  const [showTransactions, setShowTransactions] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showRecharge, setShowRecharge] = useState(false);
 
   useEffect(() => {
     // Check for recharge success
@@ -367,12 +369,12 @@ export default function UserHome({ session }: UserHomeProps) {
       } catch (err: any) {
         console.error('[UserHome] Critical error:', err);
         if (mounted) {
-            const diagInfo = await collectDiagnostics();
+            // const diagInfo = await collectDiagnostics(); // Removed as it was undefined in snippet
             setLoading(false);
             // Friendly error message
             let msg = err.message || '未知错误';
             if (msg.includes('timeout')) msg = '网络连接超时，请刷新重试';
-            setError(`数据加载失败: ${msg}${lastStage ? `（stage:${lastStage}` : ''}${diagInfo ? ` ${diagInfo}` : ''}${restProbeNote ? ` ${restProbeNote}` : ''}）`);
+            setError(`数据加载失败: ${msg}${lastStage ? `（stage:${lastStage}` : ''}${restProbeNote ? ` ${restProbeNote}` : ''}）`);
         }
       } finally {
         if (mounted && loading) setLoading(false);
@@ -389,169 +391,154 @@ export default function UserHome({ session }: UserHomeProps) {
   }, [session]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-4 sm:p-8 relative overflow-hidden bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px]">
-      
-      <div className="max-w-5xl mx-auto space-y-8 relative z-10">
-        {/* Header */}
-        <div className="flex justify-between items-center bg-white/80 backdrop-blur-xl p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-gradient-to-br from-brand-500 to-brand-600 rounded-xl shadow-lg shadow-brand-500/20 text-white">
-              <User className="w-6 h-6" />
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 overflow-x-hidden">
+      {/* 顶部背景装饰 */}
+      <div className="fixed top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-white to-[#F8FAFC] z-0 pointer-events-none" />
+      <div className="fixed top-[-10%] right-[-5%] w-[40%] h-[40%] bg-indigo-50/50 rounded-full blur-[120px] mix-blend-multiply pointer-events-none" />
+      <div className="fixed top-[10%] left-[-10%] w-[40%] h-[40%] bg-blue-50/50 rounded-full blur-[120px] mix-blend-multiply pointer-events-none" />
+
+      <div className="relative z-10 max-w-[1200px] mx-auto px-6 py-10 space-y-10">
+        
+        {/* Header: 极简风格 */}
+        <header className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-white border border-slate-100 shadow-[0_4px_12px_rgba(0,0,0,0.03)] flex items-center justify-center text-slate-400 group hover:scale-105 transition-transform duration-300">
+                    <User className="w-6 h-6 group-hover:text-indigo-500 transition-colors" />
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-base font-bold text-slate-900 tracking-tight truncate max-w-[200px]" title={user?.email}>{user?.email}</span>
+                    <span className="text-xs text-slate-500 font-medium bg-white/50 px-2 py-0.5 rounded-full border border-slate-100 w-fit backdrop-blur-sm">个人账户</span>
+                </div>
             </div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">朗伯余弦APP平台-个人中心</h1>
-              </div>
-              <p className="text-sm text-slate-500 mt-1 font-medium">个人中心 / {user?.email}</p>
-            </div>
-          </div>
-          <Button 
-            variant="outline" 
-            onClick={handleLogout} 
-            className="text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-200 shadow-sm"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            退出登录
-          </Button>
-        </div>
+            <Button 
+                variant="ghost" 
+                onClick={handleLogout}
+                className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full px-4 h-11 border border-transparent hover:border-rose-100 transition-all"
+            >
+                <LogOut className="w-4 h-4 mr-2" />
+                退出登录
+            </Button>
+        </header>
 
         {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+            <div className="bg-rose-50 border border-rose-100 text-rose-600 px-6 py-4 rounded-2xl flex items-center gap-3 shadow-sm animate-in slide-in-from-top-2">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <p>{error}</p>
-                <Button variant="ghost" size="sm" onClick={() => window.location.reload()} className="text-rose-700 underline ml-auto hover:text-rose-800 hover:bg-rose-100">
-                    刷新重试
-                </Button>
+                <p className="text-sm font-medium">{error}</p>
+                <Button variant="link" onClick={() => window.location.reload()} className="ml-auto text-rose-700 font-bold">重试</Button>
             </div>
         )}
 
-        <div className="grid gap-6 md:grid-cols-12">
-            {/* Banner Carousel - Full Width */}
-          <div className="md:col-span-12">
-            <BannerCarousel />
-          </div>
+        {/* Bento Grid Layout */}
+                <div className="space-y-6 lg:space-y-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
+                        {/* 1. 资产卡片 (Wallet) */}
+                        <div className="lg:col-span-4 flex flex-col">
+                            <div className="flex-1 min-h-[300px] lg:min-h-[360px] relative overflow-hidden group rounded-3xl lg:rounded-[2.5rem] bg-[#1e1b4b] text-white shadow-xl lg:shadow-2xl shadow-indigo-900/20 transition-all duration-500 hover:shadow-indigo-900/40 hover:-translate-y-1">
+                                {/* 动态背景层 */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-[#312e81] via-[#1e1b4b] to-black z-0"></div>
+                                
+                                {/* 极光效果 */}
+                                <div className="absolute -top-24 -right-24 w-48 h-48 lg:w-64 lg:h-64 bg-indigo-500 rounded-full blur-[80px] lg:blur-[100px] opacity-40 group-hover:opacity-60 transition-opacity duration-700"></div>
+                                <div className="absolute -bottom-24 -left-24 w-48 h-48 lg:w-64 lg:h-64 bg-violet-600 rounded-full blur-[80px] lg:blur-[100px] opacity-30 group-hover:opacity-50 transition-opacity duration-700"></div>
+                                
+                                {/* 噪点纹理叠加 */}
+                                <div className="absolute inset-0 opacity-20 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay z-0 pointer-events-none"></div>
 
-          {/* Wallet Card - Main Feature */}
-          <div className="md:col-span-7 space-y-6">
-            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-lg shadow-slate-200/50 relative overflow-hidden group h-full">
-              
-              <div className="flex items-center justify-between mb-6 relative">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-slate-100 rounded-lg">
-                    <Wallet className="w-5 h-5 text-brand-600" />
-                  </div>
-                  <h2 className="text-lg font-bold text-slate-900">我的钱包</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => setShowRecharge(true)}
-                  disabled={loading || !wallet}
-                  className="bg-brand-50 text-brand-600 border-brand-200 hover:bg-brand-100 hover:text-brand-700"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  充值
-                </Button>
-                <div className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100">
-                  最后同步: {wallet ? new Date(wallet.updated_at).toLocaleTimeString() : '--:--:--'}
-                </div>
-              </div>
-            </div>
+                                {/* 网格纹理 */}
+                                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_80%)] z-0 pointer-events-none"></div>
 
-            {wallet && (
-              <RechargeDialog 
-                open={showRecharge} 
-                onOpenChange={setShowRecharge}
-                appId={wallet.app_id}
-              />
-            )}
+                                {/* 内容层 */}
+                                <div className="relative z-10 p-6 lg:p-8 flex flex-col justify-between h-full">
+                                    
+                                    {/* 顶部：图标与操作 */}
+                                    <div className="flex items-start justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center shadow-lg shadow-black/20 group-hover:scale-110 transition-transform duration-300">
+                                                <LambertCoin size={20} variant="gold" className="lg:w-6 lg:h-6 drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-xs lg:text-sm font-medium text-indigo-200/80 tracking-wide">我的资产</span>
+                                                <span className="text-base lg:text-lg font-bold text-white tracking-tight">朗伯币钱包</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <Button 
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setShowTransactions(true)}
+                                            className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/5 rounded-xl px-3 h-8 lg:px-4 lg:h-9 text-xs lg:text-sm backdrop-blur-sm transition-all group-hover:border-white/20"
+                                        >
+                                            <History className="w-3 h-3 lg:w-3.5 lg:h-3.5 mr-1.5 lg:mr-2 opacity-70" />
+                                            交易明细
+                                        </Button>
+                                    </div>
+                                    
+                                    {/* 中部：余额展示 */}
+                                    <div className="py-4 lg:py-6">
+                                        <div className="flex items-end gap-2 mb-2 opacity-80">
+                                            <span className="text-[10px] lg:text-xs font-bold text-indigo-300 uppercase tracking-[0.2em]">当前余额</span>
+                                            <div className="h-px w-8 lg:w-12 bg-gradient-to-r from-indigo-500/50 to-transparent mb-1.5"></div>
+                                        </div>
+                                        <div className="relative">
+                                            <h2 className="text-5xl lg:text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-indigo-200 tracking-tighter tabular-nums leading-none drop-shadow-2xl break-all">
+                                                {loading ? (
+                                                    <span className="animate-pulse opacity-50">---</span>
+                                                ) : (
+                                                    wallet?.balance_permanent?.toLocaleString() ?? 0
+                                                )}
+                                            </h2>
+                                            {/* 余额光晕 */}
+                                            <div className="absolute -inset-4 bg-white/5 blur-2xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                                        </div>
+                                    </div>
 
-              <div className="grid grid-cols-2 gap-4 relative">
-                <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 hover:border-brand-500/30 transition-colors group/card">
-                  <div className="text-sm text-slate-500 font-medium mb-2 flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>
-                    永久积分
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900 tracking-tight group-hover/card:text-brand-600 transition-colors">
-                    {loading ? (
-                      <div className="h-9 w-24 bg-slate-200 rounded animate-pulse" />
-                    ) : (
-                      wallet?.balance_permanent?.toLocaleString() ?? 0
-                    )}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-400">永久额度</div>
-                </div>
-                <div className="p-5 bg-slate-50 rounded-xl border border-slate-200 hover:border-emerald-500/30 transition-colors group/card">
-                  <div className="text-sm text-slate-500 font-medium mb-2 flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span>
-                    临时积分
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900 tracking-tight group-hover/card:text-emerald-600 transition-colors">
-                    {loading ? (
-                      <div className="h-9 w-24 bg-slate-200 rounded animate-pulse" />
-                    ) : (
-                      wallet?.balance_temporary?.toLocaleString() ?? 0
-                    )}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-400">临时额度</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Transactions */}
-          <div className="md:col-span-5 space-y-6">
-            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-lg shadow-slate-200/50 h-[400px] flex flex-col">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 bg-slate-100 rounded-lg">
-                  <History className="w-5 h-5 text-brand-600" />
-                </div>
-                <h2 className="text-lg font-bold text-slate-900">最近交易</h2>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
-                {transactionsLoading ? (
-                  <div className="h-full flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 text-brand-500 animate-spin opacity-50" />
-                  </div>
-                ) : transactions.length > 0 ? (
-                  transactions.map((tx) => (
-                    <div key={tx.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 hover:border-slate-200 transition-all group">
-                      <div>
-                        <div className="font-medium text-slate-700 flex items-center gap-3">
-                          <span className={`px-2 py-1 rounded-md text-xs font-bold ${
-                            tx.type === 'deposit' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                            tx.type === 'usage' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 
-                            'bg-slate-100 text-slate-500 border border-slate-200'
-                          }`}>
-                            {tx.type === 'deposit' ? '充值' : tx.type === 'usage' ? '消费' : tx.type}
-                          </span>
-                          {tx.description && <span className="text-sm text-slate-500 group-hover:text-slate-700 transition-colors">
-                            {tx.description}
-                          </span>}
+                                    {/* 底部：状态与ID */}
+                                    <div className="flex items-end justify-between mt-auto pt-4 lg:pt-6 border-t border-white/5">
+                                        <div className="flex flex-col gap-0.5 lg:gap-1">
+                                            <span className="text-[10px] uppercase text-indigo-300/60 font-bold tracking-wider">钱包 ID</span>
+                                            <span className="font-mono text-[10px] lg:text-xs text-indigo-200/80 tracking-wider">
+                                                {wallet?.id ? `**** ${wallet.id.slice(-4)}` : '****'}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="flex items-center gap-1.5 lg:gap-2 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 lg:px-3 lg:py-1.5 rounded-full backdrop-blur-md">
+                                            <div className="relative flex h-1.5 w-1.5 lg:h-2 lg:w-2">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 lg:h-2 lg:w-2 bg-emerald-500"></span>
+                                            </div>
+                                            <span className="text-[10px] lg:text-xs font-medium text-emerald-300">账户状态正常</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div className="text-xs text-slate-400 mt-1.5 font-mono">
-                          {new Date(tx.created_at).toLocaleString()}
+
+                        {/* 2. Banner */}
+                        <div className="lg:col-span-8 flex flex-col">
+                             <div className="flex-1 h-64 lg:h-auto min-h-[250px] rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-lg lg:shadow-xl shadow-slate-200/50 border border-slate-100 bg-white relative group w-full">
+                                 {/* 确保 Banner 填满高度 */}
+                                 <div className="absolute inset-0 w-full h-full">
+                                    <BannerCarousel className="h-full rounded-none border-0 shadow-none" />
+                                 </div>
+                                 {/* 悬浮时的光泽效果 */}
+                                 <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none z-10"></div>
+                             </div>
                         </div>
-                      </div>
-                      <div className={`font-bold font-mono text-lg ${tx.amount > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {tx.amount > 0 ? '+' : ''}{tx.amount}
-                      </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-400 border border-dashed border-slate-200 rounded-xl bg-slate-50">
-                    <History className="w-8 h-8 mb-2 opacity-20" />
-                    <p>暂无交易记录</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+
+                    {/* 3. 充值中心 */}
+                    <div className="rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl shadow-slate-200/50 border border-slate-100 bg-white relative z-10">
+                        {wallet && <RechargePanel appId={wallet.app_id} className="border-0 shadow-none rounded-none" />}
+                    </div>
+                </div>
       </div>
 
-  </div>
+      <TransactionsDialog 
+        open={showTransactions}
+        onOpenChange={setShowTransactions}
+        transactions={transactions}
+        loading={transactionsLoading}
+      />
+    </div>
   );
 }

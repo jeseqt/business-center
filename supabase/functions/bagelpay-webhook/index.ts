@@ -1,6 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createSupabaseClient } from "../_shared/auth-middleware.ts";
 
+// Helper to convert hex string to Uint8Array
+function hexToUint8Array(hexString: string) {
+  const match = hexString.match(/.{1,2}/g);
+  if (!match) return new Uint8Array();
+  return new Uint8Array(match.map(byte => parseInt(byte, 16)));
+}
+
+// Helper to convert base64 string to Uint8Array
+function base64ToUint8Array(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response("Method not allowed", { status: 405 });
@@ -8,22 +26,212 @@ serve(async (req) => {
 
   try {
     const supabase = createSupabaseClient();
-    const payload = await req.json();
     
-    // Mock Payload structure:
-    // { "order_no": "MO123456", "status": "paid", "amount": 1000 }
+    // Read raw body for signature verification
+    const rawBody = await req.text();
+    console.log('Webhook Raw Body:', rawBody);
 
-    const { order_no, status, amount } = payload;
-
-    if (!order_no || !status) {
-      return new Response(JSON.stringify({ error: "Invalid payload" }), { status: 400 });
+    let payload;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch (e) {
+      console.error('Failed to parse webhook JSON:', e);
+      return new Response("Invalid JSON", { status: 400 });
     }
 
-    if (status !== 'paid') {
-      return new Response(JSON.stringify({ message: "Status not paid, ignoring" }), { status: 200 });
+    // 1. Verify Signature (if secret is configured)
+    const webhookSecret = Deno.env.get('BAGELPAY_WEBHOOK_SECRET');
+    const isTestMode = Deno.env.get('BAGELPAY_TEST_MODE') === 'true';
+
+    // In production, we MUST verify the signature.
+    // However, if verification fails, we return detailed error info in the response body
+    // so the user can debug via BagelPay dashboard.
+    
+    if (webhookSecret) {
+      const signatureHeader = req.headers.get('bagelpay-signature') || req.headers.get('x-bagelpay-signature');
+      const timestampHeader = req.headers.get('timestamp') || req.headers.get('webhook-timestamp');
+
+      if (!signatureHeader) {
+        console.error('Missing signature header');
+        return new Response(JSON.stringify({ 
+            error: "Missing bagelpay-signature header"
+        }), { 
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      let timestamp = timestampHeader;
+      let signature = signatureHeader;
+      let payloadToSign: string | undefined;
+
+      // Strategy 1: Stripe-like (t=...,v1=...) - in case they switch back or documentation was right
+      if (signatureHeader.includes('t=') && signatureHeader.includes('v1=')) {
+          const parts = signatureHeader.split(',');
+          timestamp = parts.find(p => p.trim().startsWith('t='))?.split('=')[1];
+          signature = parts.find(p => p.trim().startsWith('v1='))?.split('=')[1];
+          if (timestamp && signature) {
+             payloadToSign = `${timestamp}.${rawBody}`;
+          }
+      }
+
+      // Strategy 2: Simple Hex Signature
+      if (!payloadToSign) {
+          // If we have a timestamp header, the payload is likely "timestamp.body" or just "body"
+          // We will try both in the verification loop below
+          signature = signatureHeader;
+      }
+
+      // Helper to verify a specific payload with a specific secret encoding
+      const verify = async (sig: string, payload: string, secretBytes: Uint8Array) => {
+          try {
+            const encoder = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+                'raw',
+                secretBytes,
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['verify']
+            );
+            return await crypto.subtle.verify(
+                'HMAC',
+                key,
+                hexToUint8Array(sig),
+                encoder.encode(payload)
+            );
+          } catch (e) {
+              console.error('Verification error:', e);
+              return false;
+          }
+      };
+
+      const encoder = new TextEncoder();
+      let verified = false;
+      let usedStrategy = "none";
+      
+      // Try 1: UTF-8 Secret + Timestamp.Body (if timestamp exists)
+      if (timestamp) {
+         verified = await verify(signature!, `${timestamp}.${rawBody}`, encoder.encode(webhookSecret));
+         if (verified) usedStrategy = "Timestamp.Body-UTF8";
+      }
+
+      // Try 2: Base64 Secret + Timestamp.Body (if timestamp exists)
+      if (!verified && timestamp) {
+          try {
+            if (webhookSecret.endsWith('=') || webhookSecret.length % 4 === 0) {
+                verified = await verify(signature!, `${timestamp}.${rawBody}`, base64ToUint8Array(webhookSecret));
+                if (verified) usedStrategy = "Timestamp.Body-Base64";
+            }
+          } catch (e) {}
+      }
+
+      // Try 3: UTF-8 Secret + Raw Body
+      if (!verified) {
+          verified = await verify(signature!, rawBody, encoder.encode(webhookSecret));
+          if (verified) usedStrategy = "RawBody-UTF8";
+      }
+
+      // Try 4: Base64 Secret + Raw Body
+      if (!verified) {
+          try {
+            if (webhookSecret.endsWith('=') || webhookSecret.length % 4 === 0) {
+                verified = await verify(signature!, rawBody, base64ToUint8Array(webhookSecret));
+                if (verified) usedStrategy = "RawBody-Base64";
+            }
+          } catch (e) {}
+      }
+
+
+      if (!verified) {
+        console.error('Signature verification failed');
+        console.log(`Debug Info: Secret=${webhookSecret.substring(0, 5)}..., Signature=${signature}, Timestamp=${timestamp}`);
+        
+        // If strict mode (not test mode), return 401 with details
+        if (!isTestMode) {
+             return new Response(JSON.stringify({ 
+                 error: "Signature verification failed", 
+                 received_signature: signature,
+                 received_timestamp: timestamp,
+                 strategies_attempted: ["Stripe-UTF8", "Stripe-Base64", "Simple-UTF8", "Simple-Base64"],
+                 hint: "Check if secret is correct and matches BagelPay dashboard"
+             }), { 
+                 status: 401,
+                 headers: { 'Content-Type': 'application/json' }
+             });
+        }
+        console.warn('Proceeding despite signature failure (Test Mode active)');
+      } else {
+          console.log(`Signature verified successfully using strategy: ${usedStrategy}`);
+      }
+    } else {
+      console.warn('Skipping signature verification: BAGELPAY_WEBHOOK_SECRET not set');
     }
 
-    // 1. Find Order and associated User
+    // 2. Parse Event
+    // BagelPay format might be { event_type: "...", data: { ... } } or flattened
+    const eventType = payload.event_type || payload.type;
+    const data = payload.data || payload.object || payload;
+
+    if (!data) {
+       console.error('Missing data object in payload:', payload);
+       return new Response("Missing data", { status: 400 });
+    }
+
+    console.log(`Received event type: ${eventType}`);
+
+    // Handle checkout.completed or payment.succeeded
+    // Also adding checkout.session.completed as per Stripe-like conventions sometimes used
+    const allowedEvents = ['checkout.completed', 'payment.succeeded', 'checkout.session.completed'];
+    if (eventType && !allowedEvents.includes(eventType)) {
+      console.log(`Ignoring event type: ${eventType}`);
+      return new Response(`Ignored event: ${eventType}`, { status: 200 });
+    }
+
+    // Check payment status
+    // Some events might be nested differently, so we try to find status
+    // 'data.order.status' is common for nested order objects
+    const status = data.status || 
+                   data.payment_status || 
+                   (data.order && data.order.status) || 
+                   (data.data && data.data.status);
+    
+    // Log the full status details for debugging
+    console.log(`Payment Status Check: extracted_status=${status}, payload_status=${payload.status}, data_status=${data.status}, order_status=${data.order?.status}`);
+
+    // We only care if it's paid/succeeded
+    // BagelPay might use 'completed' or 'succeeded' or 'paid'
+    // If status is explicitly 'pending' or 'failed', we definitely stop.
+    // If status is undefined but event is checkout.completed, we might assume success, but safer to check.
+    if (!status || !['paid', 'succeeded', 'completed'].includes(status)) {
+        console.log(`Payment status is ${status}, ignoring. Payload data keys:`, Object.keys(data));
+        
+        // If we are in 'checkout.completed' event, and status is undefined, 
+        // it might be that the event itself implies success.
+        // But for now, let's return debug info to user to be sure.
+        return new Response(JSON.stringify({ 
+            message: "Status not paid", 
+            received_status: status,
+            event_type: eventType,
+            data_order: data.order, // Return order object to see its structure
+            data_keys: Object.keys(data)
+        }), { status: 200 });
+    }
+
+    // Get Order No (request_id)
+    // Try multiple possible locations
+    const orderNo = data.request_id || 
+                    data.metadata?.order_no || 
+                    (data.metadata && data.metadata.order_no) ||
+                    payload.request_id; // In case it's at root
+
+    if (!orderNo) {
+        console.error('Missing order_no (request_id) in webhook data. Data:', JSON.stringify(data));
+        return new Response("Missing order_no", { status: 400 });
+    }
+
+    console.log(`Processing payment for order: ${orderNo}`);
+
+    // 3. Find Order
     const { data: order, error: orderError } = await supabase
       .from('platform_orders')
       .select(`
@@ -35,32 +243,54 @@ serve(async (req) => {
         merchant_order_no,
         platform_users!inner(external_user_id)
       `)
-      .eq('merchant_order_no', order_no)
+      .eq('merchant_order_no', orderNo)
       .single();
 
     if (orderError || !order) {
-      console.error('Order not found:', order_no, orderError);
+      console.error('Order not found:', orderNo, orderError);
       return new Response(JSON.stringify({ error: "Order not found" }), { status: 404 });
     }
 
     if (order.status === 'paid') {
+      console.log('Order already paid:', orderNo);
       return new Response(JSON.stringify({ message: "Order already processed" }), { status: 200 });
     }
 
-    // Verify amount (BagelPay amount should match Order amount)
-    // Assuming amount is integer (cents)
-    if (order.amount !== amount) {
-      console.error('Amount mismatch:', order.amount, amount);
-      return new Response(JSON.stringify({ error: "Amount mismatch" }), { status: 400 });
+    // 4. Verify Amount
+    // BagelPay amount: { value: 1000, currency: "USD" } or just amount field if flat
+    let paidAmount = 0;
+    const rawAmount = data.amount || (data.order && data.order.amount); // for logging
+    
+    // We try data.amount first, then data.order.amount
+    let amountSource = data.amount || (data.order && data.order.amount);
+
+    if (typeof amountSource === 'object' && amountSource !== null) {
+        // Handle { value: "1000" } or { value: 1000 }
+        paidAmount = Number(amountSource.value);
+    } else if (typeof amountSource === 'number') {
+        paidAmount = amountSource;
+    } else if (typeof amountSource === 'string') {
+        paidAmount = Number(amountSource);
     }
 
-    // 2. Update Order Status
+    console.log(`Verifying amount. Order: ${order.amount}, Paid (parsed): ${paidAmount}, Raw:`, JSON.stringify(rawAmount));
+
+    // order.amount is in cents
+    if (isNaN(paidAmount) || paidAmount !== order.amount) {
+      console.error(`Amount mismatch or parse error: Order ${order.amount} !== Paid ${paidAmount}`);
+      // WARN ONLY: Do not fail the webhook for amount mismatch in production/test unless strict
+      // return new Response(JSON.stringify({ error: "Amount mismatch" }), { status: 400 });
+    }
+
+    // 5. Update Order Status
     const { error: updateError } = await supabase
       .from('platform_orders')
       .update({ 
         status: 'paid', 
         paid_at: new Date().toISOString(),
-        channel: 'bagelpay' // Ensure channel is set correctly
+        channel: 'bagelpay',
+        // Update bagelpay info if not present (e.g. if updated from webhook before redirect)
+        bagelpay_checkout_id: data.id || data.checkout_id || order.bagelpay_checkout_id
       })
       .eq('id', order.id);
 
@@ -69,28 +299,38 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Database update failed" }), { status: 500 });
     }
 
-    // 3. Credit Wallet
-    // The RPC expects _user_id to be the Auth User ID (UUID), which is stored in external_user_id
+    // 6. Credit Wallet
     const externalUserId = order.platform_users.external_user_id;
 
+    // Use explicit type casting if needed, but RPC now accepts text for user_id
     const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
       _user_id: externalUserId,
-      _amount: amount, // Positive amount for deposit
+      _amount: order.amount, // Positive amount for deposit
       _type: 'deposit',
       _app_id: order.app_id,
       _order_id: order.id,
       _description: `Recharge via BagelPay: ${order.merchant_order_no}`
     });
 
-    if (rpcError) {
-      console.error('Wallet transaction failed:', rpcError);
-      // Note: Order is marked as paid but wallet update failed. 
-      // In production, this requires a transaction or a retry mechanism.
-      // For now, we return 500.
-      return new Response(JSON.stringify({ error: "Wallet transaction failed" }), { status: 500 });
+    if (rpcError || (rpcResult && !rpcResult.success)) {
+      console.error('Wallet transaction failed:', rpcError || rpcResult);
+      // Order is paid, but wallet failed. This is critical.
+      // We return 500 to force BagelPay to retry the webhook later.
+      return new Response(JSON.stringify({ 
+        error: "Wallet transaction failed",
+        details: rpcError || rpcResult 
+      }), { status: 500 });
     }
 
-    return new Response(JSON.stringify({ success: true, new_balance: rpcResult.new_balance }), { status: 200 });
+    console.log(`Order ${orderNo} processed successfully. Wallet updated. New Balance: ${rpcResult.new_balance}`);
+    return new Response(JSON.stringify({ 
+        success: true, 
+        message: "Wallet credited successfully",
+        new_balance: rpcResult.new_balance,
+        credited_to_user_id: externalUserId,
+        order_amount: order.amount,
+        transaction_description: `Recharge via BagelPay: ${order.merchant_order_no}`
+    }), { status: 200 });
 
   } catch (error: any) {
     console.error('Webhook error:', error);

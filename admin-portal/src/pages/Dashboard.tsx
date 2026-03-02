@@ -6,7 +6,7 @@ import {
   Users, CreditCard, Ticket, LogOut,
   Bell, Settings, Image as ImageIcon,
   Menu, Layers, BarChart3, GitBranch, MessageSquare, Search,
-  ChevronRight
+  ChevronRight, Package
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -33,6 +33,7 @@ export default function Dashboard() {
   const navItems = [
     { id: 'users', label: '用户管理', icon: Users },
     { id: 'apps', label: '应用接入管理', icon: Layers },
+    { id: 'products', label: '充值商品管理', icon: Package },
     { id: 'orders', label: '财务订单流水', icon: CreditCard },
     { id: 'reports', label: '业务用量报表', icon: BarChart3 },
     { id: 'invites', label: '邀请码管理', icon: Ticket },
