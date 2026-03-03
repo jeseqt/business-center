@@ -175,29 +175,32 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
 
 
       if (invokeError) {
-        console.error('Invoke Error Details:', invokeError);
-        // 尝试解析更详细的错误信息
-        let errorMessage = invokeError.message || '调用支付服务失败';
-        
-        if (invokeError && typeof invokeError === 'object' && 'context' in invokeError) {
-             // @ts-ignore
-             const response = invokeError.context;
-             if (response && typeof response.text === 'function') {
-                 try {
-                    const text = await response.text();
-                    console.log('Error Response Body:', text);
+        console.error('Recharge Error Details:', invokeError);
+        let msg = invokeError.message || '充值服务暂时不可用';
+        try {
+            if (invokeError && typeof invokeError === 'object' && 'context' in invokeError) {
+                const context = (invokeError as any).context;
+                if (context && typeof context.text === 'function') {
+                    const text = await context.text();
+                    console.error('Raw Error Response:', text);
                     try {
                         const json = JSON.parse(text);
-                        errorMessage = json.error || json.message || text;
-                    } catch {
-                        errorMessage = text.substring(0, 100);
+                        if (json.error) msg = json.error;
+                        else if (json.message) msg = json.message;
+                    } catch (jsonErr) {
+                        // Not JSON, use text if short and not HTML
+                        if (text && text.length < 200 && !text.trim().startsWith('<')) {
+                             msg = text;
+                        } else {
+                             msg = `Server Error: ${invokeError.message}`;
+                        }
                     }
-                 } catch (readError) {
-                    console.warn('Failed to read error response body:', readError);
-                 }
-             }
+                }
+            }
+        } catch (e) { 
+            console.error('Error parsing failed:', e);
         }
-        throw new Error(errorMessage);
+        throw new Error(msg);
       }
 
       if (result.data?.payment_url) {

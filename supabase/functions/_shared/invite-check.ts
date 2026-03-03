@@ -57,7 +57,8 @@ export async function checkAndAwardInvite(
 
     // 4. Calculate Reward (50% of Recharge Amount in Dollars/Points)
     // orderAmount is in cents.
-    const rewardPoints = Math.floor((orderAmount / 100) * 0.5);
+    // 50% rebate. Example: Recharge 1000 cents ($10), rebate 500 cents ($5).
+    const rewardPoints = Math.floor(orderAmount * 0.5);
     
     if (rewardPoints <= 0) {
         console.log('Invite Reward: Calculated reward is 0');

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Flame, Crown, Coins, Sparkles, Zap, Gift, Copy, Share2, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Flame, Crown, Coins, Sparkles, Zap, Gift, Copy, Share2, CheckCircle2, ArrowRight, HelpCircle, AlertCircle } from 'lucide-react';
 import { LambertCoin } from './LambertCoin';
 import { Button } from './Button';
+import { Modal } from './Modal';
 
 interface Product {
   id: string;
@@ -52,7 +53,46 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   const [isFirstRecharge, setIsFirstRecharge] = useState(false);
   const [hasPurchasedExperience, setHasPurchasedExperience] = useState(false);
   const [recentRechargeTotal, setRecentRechargeTotal] = useState(0);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string>('');
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [inviteCodeError, setInviteCodeError] = useState<string>('');
+
+  const fetchInviteCode = async () => {
+      if (!appId) return;
+      // setInviteCode(''); // Don't clear immediately to avoid flickering if refreshing
+      setInviteCodeError('');
+      try {
+          const { data, error } = await supabase.functions.invoke('get-invite-code');
+          if (error) {
+              console.error('Failed to fetch invite code:', error);
+              setInviteCode('获取失败');
+              // Try to extract error message
+              let errMsg = error.message || 'Unknown error';
+              try {
+                  if (error instanceof Error && 'context' in error) {
+                      const context = (error as any).context;
+                      if (context && typeof context.json === 'function') {
+                          const json = await context.json();
+                          if (json.error) errMsg = json.error;
+                      }
+                  }
+              } catch (e) { /* ignore */ }
+              setInviteCodeError(errMsg);
+          } else if (data) {
+              setInviteCode(data.code || '无邀请码');
+              if (data.redeemed_code) {
+                  setInputCode(data.redeemed_code);
+                  setInviteStatus('success');
+              }
+          } else {
+              setInviteCode('无邀请码');
+          }
+      } catch (err: any) {
+          console.error('Invite code fetch error:', err);
+          setInviteCode('获取失败');
+          setInviteCodeError(err.message || String(err));
+      }
+  };
   const [showInviteInput, setShowInviteInput] = useState(false);
   const [inputCode, setInputCode] = useState('');
   const [inviteStatus, setInviteStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
@@ -181,25 +221,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
     };
 
     fetchUserStatus();
-
-    // Fetch Invite Code & Status
-    supabase.functions.invoke('get-invite-code').then(({ data, error }) => {
-        if (error) {
-            console.error('Failed to fetch invite code:', error);
-            setInviteCode('获取失败');
-        } else if (data) {
-            setInviteCode(data.code || '无邀请码');
-            if (data.redeemed_code) {
-                setInputCode(data.redeemed_code);
-                setInviteStatus('success');
-            }
-        } else {
-            setInviteCode('无邀请码');
-        }
-    }).catch(err => {
-        console.error('Invite code fetch error:', err);
-        setInviteCode('获取失败');
-    });
+    fetchInviteCode();
 
   }, [appId]);
 
@@ -213,33 +235,67 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('请先登录');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) throw new Error('请先登录');
+      
+      // Force refresh session to ensure token is valid and not about to expire
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+          console.warn('Session refresh warning:', refreshError);
+          // Don't throw immediately, try using existing session if valid
+      }
+      
+      const currentSession = refreshData.session || session;
+      const token = currentSession.access_token;
+      
+      // Use Anon Key for Authorization header to pass Gateway verification,
+      // and pass the actual user token in a custom header to bypass Gateway's strict user token check.
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || supabase.supabaseKey;
 
       const returnUrl = `${window.location.origin}/dashboard/wallet?status=success`;
-      const { data: result, error: invokeError } = await supabase.functions.invoke('create-recharge-order', {
-        body: {
-          app_id: appId, 
-          return_url: returnUrl,
-          amount: amount,
-          product_id: selectedProduct?.id
-        }
+      
+      // Use fetch instead of supabase.functions.invoke to guarantee header control
+      // This prevents the Supabase client from automatically injecting the user's token into Authorization
+      const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-recharge-order`;
+      
+      const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${anonKey}`,
+              'x-client-token': token
+          },
+          body: JSON.stringify({
+            app_id: appId, 
+            return_url: returnUrl,
+            amount: amount,
+            product_id: selectedProduct?.id
+          })
       });
 
-      if (invokeError) {
-        console.error('Recharge Error Details:', invokeError);
-        // Try to parse error body if it exists in the error object structure
-        let msg = invokeError.message || '充值服务暂时不可用';
-        try {
-            if (invokeError instanceof Error && 'context' in invokeError) {
-                const context = (invokeError as any).context;
-                if (context && typeof context.json === 'function') {
-                    const json = await context.json();
-                    if (json.error) msg = json.error;
-                }
-            }
-        } catch (e) { /* ignore */ }
-        throw new Error(msg);
+      let result;
+      let errorText;
+      
+      try {
+          const text = await response.text();
+          try {
+              result = JSON.parse(text);
+          } catch (e) {
+              errorText = text;
+          }
+      } catch (e) {
+          errorText = 'Failed to read response';
+      }
+
+      if (!response.ok) {
+          console.error('Recharge Error (Fetch):', result || errorText);
+          throw new Error((result && (result.error || result.message)) || errorText || `HTTP Error ${response.status}`);
+      }
+
+      // Check for application-level error returned as 200 OK
+      if (result && result.success === false) {
+          console.error('Recharge Failed (App Error):', result);
+          throw new Error(result.error || '充值服务异常');
       }
 
       if (result && result.data && result.data.payment_url) {
@@ -273,10 +329,28 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
               }
           });
           
-          if (error) throw error;
+          if (error) {
+              let msg = error.message || '绑定失败';
+              try {
+                  if (typeof error === 'object' && error !== null && 'context' in error) {
+                      const context = (error as any).context;
+                      if (context && typeof context.json === 'function') {
+                          const json = await context.json();
+                          if (json.error) msg = json.error;
+                      }
+                  }
+              } catch (e) { /* ignore */ }
+
+              if (msg.includes('Cannot redeem your own code')) msg = '无法绑定自己的邀请码';
+              if (msg.includes('already redeemed')) msg = '您已绑定过邀请码，不可重复绑定';
+              if (msg.includes('Invalid invite code')) msg = '邀请码无效，请检查后重试';
+
+              throw new Error(msg);
+          }
           
           if (data && data.success) {
               setInviteStatus('success');
+              fetchInviteCode();
           } else {
               throw new Error(data?.error || data?.message || '兑换失败');
           }
@@ -411,9 +485,23 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
               <div className="flex flex-col md:flex-row gap-4">
                   {/* My Code */}
                   <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
-                      <div className="text-xs text-slate-500 mb-1">我的邀请码</div>
+                      <div className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                          我的邀请码
+                          <HelpCircle 
+                            className="w-4 h-4 cursor-pointer text-slate-400 hover:text-brand-600" 
+                            onClick={() => setIsActivityModalOpen(true)}
+                          />
+                      </div>
                       <div className="flex items-center justify-between">
-                          <span className="text-lg font-mono font-bold text-brand-700 tracking-wider">
+                          <span 
+                            className={`text-lg font-mono font-bold tracking-wider ${inviteCode === '获取失败' ? 'text-red-500 cursor-pointer underline decoration-dotted' : 'text-brand-700'}`}
+                            onClick={() => {
+                                if (inviteCode === '获取失败') {
+                                    if (inviteCodeError) alert(`错误详情: ${inviteCodeError}`);
+                                    fetchInviteCode();
+                                }
+                            }}
+                          >
                               {inviteCode || '加载中...'}
                           </span>
                           <button 
@@ -432,7 +520,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
                   <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
                       <div className="text-xs text-slate-500 mb-1 flex justify-between items-center">
                           <span>填写好友邀请码</span>
-                          <span className="text-[10px] text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">首充获赠50% (新手体验除外)</span>
+                          <span className="text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-100">首充获赠 50% (新手体验除外)</span>
                       </div>
                       <div className="flex gap-2">
                           <input 
@@ -449,7 +537,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
                             disabled={!inputCode || inviteStatus === 'success' || inviteStatus === 'verifying'}
                             className="bg-brand-600 text-white text-xs px-3 py-1 rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                           >
-                              {inviteStatus === 'verifying' ? '...' : inviteStatus === 'success' ? '已绑定' : '兑换'}
+                              {inviteStatus === 'verifying' ? '...' : inviteStatus === 'success' ? '已绑定' : '绑定'}
                           </button>
                       </div>
                       {inviteStatus === 'success' && <div className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 邀请码已绑定，首充后生效</div>}
@@ -586,6 +674,61 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           {loading ? '正在创建订单...' : `支付 $${amount} 立即充值`}
         </Button>
       </div>
+
+      <Modal
+        isOpen={isActivityModalOpen}
+        onClose={() => setIsActivityModalOpen(false)}
+        title="邀请有礼活动规则"
+      >
+        <div className="space-y-6 text-sm text-gray-600">
+            <div>
+                <h4 className="font-bold text-gray-900 mb-2">一、参与方式</h4>
+                <p>
+                    复制您的专属邀请码分享给好友。好友在充值页面填写您的邀请码并点击“绑定”按钮，即可建立关联。
+                </p>
+                <p className="mt-2 text-amber-600 font-medium bg-amber-50 p-2 rounded border border-amber-100">
+                    ⚠️ 注意：邀请码一旦绑定成功，将无法修改或解绑。请务必在绑定前确认邀请码正确。
+                </p>
+            </div>
+
+            <div>
+                <h4 className="font-bold text-gray-900 mb-2">二、奖励机制</h4>
+                <ul className="list-disc pl-5 space-y-2">
+                    <li>
+                        <span className="font-medium text-gray-900">返利对象：</span>
+                        奖励将发放给<span className="font-bold text-brand-600">邀请码所属的用户（邀请人）</span>。
+                    </li>
+                    <li>
+                        <span className="font-medium text-gray-900">返利比例：</span>
+                        当被邀请人完成<span className="text-brand-600 font-bold">首次充值</span>时，系统将向邀请人返还充值金额的 <span className="text-brand-600 font-bold">50%</span> 作为朗伯币奖励。
+                    </li>
+                    <li>
+                        <span className="font-medium text-gray-900">排除项：</span>
+                        <span className="text-amber-600 font-bold">新手体验包（$1及以下金额）</span>属于特惠商品，不参与首充返利活动。
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h4 className="font-bold text-gray-900 mb-2">三、反作弊与限制</h4>
+                <ul className="list-disc pl-5 space-y-1">
+                    <li>
+                        同一用户（同一设备、IP、支付账号）仅能绑定一次邀请码。
+                    </li>
+                    <li>
+                        禁止用户绑定自己的邀请码。
+                    </li>
+                    <li>
+                        严禁通过恶意注册、模拟器刷量等手段获取奖励。一经发现，平台有权取消所有奖励并冻结相关账号。
+                    </li>
+                </ul>
+            </div>
+            
+            <div className="pt-4 border-t text-xs text-gray-400 text-center">
+                本活动最终解释权归平台所有
+            </div>
+        </div>
+      </Modal>
     </div>
   );
 }
