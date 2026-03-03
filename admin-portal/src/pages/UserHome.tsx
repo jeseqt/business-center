@@ -7,6 +7,7 @@ import { PlatformWallet, PlatformWalletTransaction } from '../types/shared';
 import { Session } from '@supabase/supabase-js';
 import { RechargePanel } from '../components/RechargePanel';
 import { TransactionsDialog } from '../components/TransactionsDialog';
+import { RechargeSuccessDialog } from '../components/RechargeSuccessDialog';
 import { LambertCoin } from '../components/LambertCoin';
 
 interface UserHomeProps {
@@ -20,6 +21,7 @@ export default function UserHome({ session }: UserHomeProps) {
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
   const [showTransactions, setShowTransactions] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,7 +29,7 @@ export default function UserHome({ session }: UserHomeProps) {
     const params = new URLSearchParams(window.location.search);
     if (params.get('status') === 'success') {
       window.history.replaceState({}, '', window.location.pathname);
-      // Optional: Show success toast
+      setShowSuccessDialog(true);
     }
   }, []);
 
@@ -538,6 +540,11 @@ export default function UserHome({ session }: UserHomeProps) {
         onOpenChange={setShowTransactions}
         transactions={transactions}
         loading={transactionsLoading}
+      />
+
+      <RechargeSuccessDialog
+        open={showSuccessDialog}
+        onOpenChange={setShowSuccessDialog}
       />
     </div>
   );

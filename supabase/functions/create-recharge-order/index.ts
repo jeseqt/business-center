@@ -12,18 +12,31 @@ serve(async (req) => {
     // 1. Authenticate User (Bearer Token)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      console.error('Missing Authorization header. Headers:', Object.fromEntries(req.headers.entries()));
       throw new Error('Missing Authorization header');
     }
     const token = authHeader.replace(/^Bearer /i, '');
+    
+    // Debug token details (safely)
+    console.log(`Processing token: length=${token.length}, prefix=${token.substring(0, 10)}...`);
+
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
     
     if (userError || !user) {
-      console.error('Auth error:', userError);
+      console.error('Auth error details:', {
+        message: userError?.message,
+        status: userError?.status,
+        name: userError?.name,
+        token_preview: `${token.substring(0, 10)}...`
+      });
+
       return new Response(
         JSON.stringify({ 
             error: `Invalid user token: ${userError?.message || 'User not found'}`,
             debug: {
+                token_length: token.length,
                 token_prefix: token.substring(0, 10) + '...',
+                auth_header_exists: !!authHeader,
                 error_details: userError
             }
         }),
@@ -171,10 +184,39 @@ serve(async (req) => {
         })
         .eq('id', order.id);
 
+      // --- BONUS LOGIC START ---
+      // Dynamic import for shared logic
+      const { calculateRechargeBonuses } = await import("../_shared/recharge-bonus.ts");
+      
+      const { totalBonus, bonusDetails } = await calculateRechargeBonuses(
+          supabase,
+          order, // Contains all necessary fields
+          points, // Use the points calculated earlier
+          user.id // Auth User ID
+      );
+
+      const finalCreditAmount = points + totalBonus;
+      console.log(`Mock Mode Bonus: Base ${points}, Bonus ${totalBonus}. Details:`, bonusDetails);
+      
+      if (totalBonus > 0) {
+        // Update metadata with bonus info
+        // We need to merge with existing metadata if possible, but orderData.metadata is available
+        const newMetadata = {
+            ...(orderData.metadata || {}),
+            bonus_points: totalBonus,
+            bonus_details: bonusDetails
+        };
+        
+        await supabase.from('platform_orders').update({
+            metadata: newMetadata
+        }).eq('id', order.id);
+      }
+      // --- BONUS LOGIC END ---
+
       // 2. Credit Wallet
       const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
         _user_id: user.id, // Auth User ID
-        _amount: amountCents,
+        _amount: finalCreditAmount, // Use final amount
         _type: 'deposit',
         _app_id: app_id,
         _order_id: order.id,
@@ -189,6 +231,15 @@ serve(async (req) => {
 
       // 3. Return Success URL as Payment URL (Instant Redirect)
       checkoutUrl = successUrl;
+      
+      // 4. Check Cumulative Rewards (Async)
+      try {
+          const { checkAndAwardCumulative } = await import("../_shared/cumulative-check.ts");
+          // Use platformUser.id (UUID)
+          await checkAndAwardCumulative(supabase, platformUser.id, app_id);
+      } catch (e) {
+          console.error('Cumulative check failed:', e);
+      }
       
     } else {
       // Helper to convert to snake_case

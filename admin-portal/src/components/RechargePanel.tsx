@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Button } from './Button';
 import { supabase } from '../lib/supabase';
-import { Flame, Crown, Coins, Sparkles, Zap, Gift, ShieldCheck } from 'lucide-react';
+import { Flame, Crown, Coins, Sparkles, Zap, Gift, Copy, Share2, CheckCircle2, ArrowRight } from 'lucide-react';
 import { LambertCoin } from './LambertCoin';
-import { RechargeAgreementDialog } from './RechargeAgreementDialog';
+import { Button } from './Button';
 
 interface Product {
   id: string;
@@ -20,21 +19,26 @@ interface RechargePanelProps {
   className?: string;
 }
 
-// UI Configuration Map based on user request
+// Activity Constants
+const FRENZY_MULTIPLIER = 1.5;
+const FIRST_RECHARGE_PERCENT = 0.10;
+const CUMULATIVE_GOAL = 200;
+const CUMULATIVE_REWARD = 30;
+
+// UI Configuration Map
 const PRODUCT_CONFIG: Record<number, {
   title: string;
   buttonText: string;
-  bonusText: string;
   highlight?: boolean;
   isPremium?: boolean;
   icon?: any;
 }> = {
-  1: { title: '新手体验', buttonText: '立即体验', bonusText: '赠送：——', icon: Sparkles },
-  5: { title: '轻量入门', buttonText: '特惠充值', bonusText: '赠送：+1', highlight: true, icon: Coins },
-  10: { title: '人气爆款', buttonText: '立即抢购', bonusText: '赠送：+2', highlight: true, icon: Flame },
-  20: { title: '进阶畅玩', buttonText: '推荐充值', bonusText: '赠送：+5', icon: Zap },
-  50: { title: '尊享优选', buttonText: '尊享充值', bonusText: '赠送：+15', isPremium: true, icon: Gift },
-  100: { title: '至尊专属', buttonText: '立即开通', bonusText: '赠送：+35', highlight: true, isPremium: true, icon: Crown },
+  1: { title: '新手体验', buttonText: '立即体验', icon: Sparkles },
+  5: { title: '轻量入门', buttonText: '特惠充值', highlight: true, icon: Coins },
+  10: { title: '人气爆款', buttonText: '立即抢购', highlight: true, icon: Flame },
+  20: { title: '进阶畅玩', buttonText: '推荐充值', icon: Zap },
+  50: { title: '尊享优选', buttonText: '尊享充值', isPremium: true, icon: Gift },
+  100: { title: '至尊专属', buttonText: '立即开通', highlight: true, isPremium: true, icon: Crown },
 };
 
 export function RechargePanel({ appId, className }: RechargePanelProps) {
@@ -43,62 +47,50 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showAgreement, setShowAgreement] = useState(false);
   
-  // Countdown Timer Logic
+  // Activity States
+  const [isFirstRecharge, setIsFirstRecharge] = useState(false);
+  const [hasPurchasedExperience, setHasPurchasedExperience] = useState(false);
+  const [recentRechargeTotal, setRecentRechargeTotal] = useState(0);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [showInviteInput, setShowInviteInput] = useState(false);
+  const [inputCode, setInputCode] = useState('');
+  const [inviteStatus, setInviteStatus] = useState<'idle' | 'verifying' | 'success' | 'error'>('idle');
+  const [inviteError, setInviteError] = useState('');
+
+  // Countdown Timer
   const [timeLeft, setTimeLeft] = useState<{hours: number, minutes: number, seconds: number}>({ hours: 0, minutes: 0, seconds: 0 });
 
   useEffect(() => {
-    console.log('RechargePanel initialized with appId:', appId);
-    if (!appId) {
-      console.error('RechargePanel mounted without appId');
-      setError('系统配置错误：缺少应用ID (appId)');
-    } else {
-        // Simple UUID validation
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(appId)) {
-            console.warn('Potential UUID mismatch: appId format looks invalid', appId);
-            // setError(`应用ID格式异常: ${appId}`); // Optional: force error
-        }
-    }
-  }, [appId]);
-
-  useEffect(() => {
-    // Initialize countdown to end of day or specific time
-    const calculateTimeLeft = () => {
+    // Timer Logic
+    const timer = setInterval(() => {
       const now = new Date();
       const endOfDay = new Date();
       endOfDay.setHours(23, 59, 59, 999);
-      
       const diff = endOfDay.getTime() - now.getTime();
-      
       if (diff > 0) {
-        return {
+        setTimeLeft({
           hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
           minutes: Math.floor((diff / 1000 / 60) % 60),
           seconds: Math.floor((diff / 1000) % 60)
-        };
+        });
       }
-      return { hours: 0, minutes: 0, seconds: 0 };
-    };
-
-    const timer = setInterval(() => {
-      setTimeLeft(calculateTimeLeft());
     }, 1000);
-
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
+    if (!appId) return;
+
+    // Fetch Products
     supabase
       .from('recharge_products')
       .select('*')
       .eq('is_active', true)
       .order('amount', { ascending: true })
-      .then(({ data, error }) => {
+      .then(({ data }) => {
         if (data) {
           setProducts(data);
-          // Default select the $30 option if available, otherwise first
           const defaultProduct = data.find(p => p.amount === 30) || data[0];
           if (defaultProduct) {
             setSelectedProduct(defaultProduct);
@@ -106,7 +98,110 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           }
         }
       });
-  }, []);
+
+    // Fetch User Status (First Recharge & Recent Total)
+    const fetchUserStatus = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Check First Recharge (Any paid order?)
+        // Note: We need to filter by platform_users linked to this user if possible, 
+        // but since RLS limits to own orders, simple select is fine.
+        // We assume platform_orders has RLS "Users can view own orders"
+        const { count, error: countError } = await supabase
+            .from('platform_orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'paid');
+        
+        if (!countError) {
+            setIsFirstRecharge(count === 0);
+        }
+
+        // Check if user has purchased the 'New User Experience' (amount = 1)
+        // Try RPC first (more robust if RLS is strict), fall back to direct query
+        let hasPurchased = false;
+        
+        // 1. Try RPC if we can find the product ID
+        // We need the product ID for the $1 item. 
+        // Since products state might not be set yet inside this async function if run in parallel,
+        // we should try to find it from the products list we just fetched if we merged logic, 
+        // or fetch it separately.
+        // To be safe and simple, we'll assume we can use the ID if we have it, or rely on amount query.
+        
+        // Let's use the direct query first but with a note that RLS is required.
+        // IF RLS is missing, this returns 0.
+        const { count: experienceCount, error: experienceError } = await supabase
+            .from('platform_orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'paid')
+            .eq('amount', 100); // 100 cents = $1
+        
+        if (!experienceError && experienceCount !== null && experienceCount > 0) {
+            hasPurchased = true;
+        }
+
+        // 2. Try RPC as backup/alternative if direct query failed (likely due to RLS)
+        if (!hasPurchased) {
+             // We need to find the $1 product ID.
+             const { data: expProducts } = await supabase
+                .from('recharge_products')
+                .select('id')
+                .eq('amount', 1)
+                .single();
+             
+             if (expProducts) {
+                 const { data: rpcCount } = await supabase.rpc('get_user_product_purchase_count', {
+                     _app_id: appId,
+                     _product_id: expProducts.id
+                 });
+                 if (rpcCount && rpcCount > 0) {
+                     hasPurchased = true;
+                 }
+             }
+        }
+
+        if (hasPurchased) {
+            setHasPurchasedExperience(true);
+        }
+
+        // Check Recent Recharge Total (Last 7 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        
+        const { data: recentOrders, error: recentError } = await supabase
+            .from('platform_orders')
+            .select('amount')
+            .eq('status', 'paid')
+            .gte('created_at', sevenDaysAgo.toISOString());
+
+        if (recentOrders) {
+            const total = recentOrders.reduce((sum, order) => sum + order.amount, 0);
+            setRecentRechargeTotal(total / 100);
+        }
+    };
+
+    fetchUserStatus();
+
+    // Fetch Invite Code & Status
+    supabase.functions.invoke('get-invite-code').then(({ data, error }) => {
+        if (error) {
+            console.error('Failed to fetch invite code:', error);
+            setInviteCode('获取失败');
+        } else if (data) {
+            setInviteCode(data.code || '无邀请码');
+            if (data.redeemed_code) {
+                setInputCode(data.redeemed_code);
+                setInviteStatus('success');
+            }
+        } else {
+            setInviteCode('无邀请码');
+        }
+    }).catch(err => {
+        console.error('Invite code fetch error:', err);
+        setInviteCode('获取失败');
+    });
+
+  }, [appId]);
 
   const handleProductSelect = (product: Product) => {
     setSelectedProduct(product);
@@ -114,110 +209,126 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   };
 
   const handleRecharge = async () => {
-    if (!appId) {
-      setError('系统配置错误：缺少应用ID，无法充值');
-      return;
-    }
+    if (!appId) return;
     setLoading(true);
     setError(null);
     try {
-      // 1. 确保会话有效 (强制刷新一次，避免 Invalid JWT)
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !session) {
-        throw new Error('请先登录');
-      }
-
-      // 检查 Token 是否临近过期 (比如剩余时间 < 60s)，或者直接尝试刷新
-      // 这里直接刷新以确保万无一失
-      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        console.warn('Session refresh warning:', refreshError);
-        // 如果刷新失败但原本有 session，尝试继续使用旧 session，或者抛出错误让用户重新登录
-        // 这里的策略是：如果刷新失败，很可能 token 已经失效了
-        throw new Error('会话已过期，请刷新页面或重新登录');
-      }
-
-      const currentSession = refreshData.session || session;
-      const token = currentSession.access_token;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('请先登录');
 
       const returnUrl = `${window.location.origin}/dashboard/wallet?status=success`;
-
-      const requestPayload = {
-        app_id: appId, 
-        return_url: returnUrl,
-        amount: amount,
-        product_id: selectedProduct?.id
-      };
-
-      console.log('Initiating recharge request...', requestPayload);
-
-      // 显式传递 Authorization 头，尽管 invoke 会自动处理，但在某些极端情况下（如 invoke 内部状态不一致）手动传递更稳妥
-      // update: 移除手动传递，让 supabase client 自动处理，避免 token 格式问题
       const { data: result, error: invokeError } = await supabase.functions.invoke('create-recharge-order', {
-        body: requestPayload
+        body: {
+          app_id: appId, 
+          return_url: returnUrl,
+          amount: amount,
+          product_id: selectedProduct?.id
+        }
       });
 
-
       if (invokeError) {
-        console.error('Invoke Error Details:', invokeError);
-        // 尝试解析更详细的错误信息
-        let errorMessage = invokeError.message || '调用支付服务失败';
-        
-        if (invokeError && typeof invokeError === 'object' && 'context' in invokeError) {
-             // @ts-ignore
-             const response = invokeError.context;
-             if (response && typeof response.text === 'function') {
-                 try {
-                    const text = await response.text();
-                    console.log('Error Response Body:', text);
-                    try {
-                        const json = JSON.parse(text);
-                        errorMessage = json.error || json.message || text;
-                    } catch {
-                        errorMessage = text.substring(0, 100);
-                    }
-                 } catch (readError) {
-                    console.warn('Failed to read error response body:', readError);
-                 }
-             }
-        }
-        
-        // 特殊处理 Invalid JWT
-        if (errorMessage.includes('Invalid JWT') || errorMessage.includes('jwt expired')) {
-             console.warn('Session invalid, forcing sign out...');
-             await supabase.auth.signOut();
-             localStorage.clear(); // 清除本地缓存，确保彻底退出
-             window.location.reload(); // 刷新页面以重置状态
-             return; // 停止执行
-        }
-
-        throw new Error(errorMessage);
+        console.error('Recharge Error Details:', invokeError);
+        // Try to parse error body if it exists in the error object structure
+        let msg = invokeError.message || '充值服务暂时不可用';
+        try {
+            if (invokeError instanceof Error && 'context' in invokeError) {
+                const context = (invokeError as any).context;
+                if (context && typeof context.json === 'function') {
+                    const json = await context.json();
+                    if (json.error) msg = json.error;
+                }
+            }
+        } catch (e) { /* ignore */ }
+        throw new Error(msg);
       }
-      
-      if (result.data?.payment_url) {
+
+      if (result && result.data && result.data.payment_url) {
         window.location.href = result.data.payment_url;
+      } else if (result && result.error) {
+        throw new Error(result.error);
       } else {
-        throw new Error('未获取到支付链接，请稍后重试或联系客服');
+        throw new Error('未获取到支付链接');
       }
-
     } catch (err: any) {
-      console.error('Recharge error:', err);
-      setError(err.message);
+      console.error('Payment Error:', err);
+      setError(err.message || '充值失败');
     } finally {
       setLoading(false);
     }
   };
 
-  // Get current config based on selection
-  const currentConfig = selectedProduct ? PRODUCT_CONFIG[selectedProduct.amount] : null;
+  const handleRedeemInvite = async () => {
+      if (!inputCode) return;
+      setInviteStatus('verifying');
+      setInviteError('');
+      
+      try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('Please login');
+
+          const { data, error } = await supabase.functions.invoke('redeem-invite', {
+              body: {
+                  code: inputCode,
+                  app_id: appId
+              }
+          });
+          
+          if (error) throw error;
+          
+          if (data && data.success) {
+              setInviteStatus('success');
+          } else {
+              throw new Error(data?.error || data?.message || '兑换失败');
+          }
+          
+      } catch (err: any) {
+          console.error(err);
+          setInviteStatus('error');
+          setInviteError(err.message);
+      }
+  };
+
+  // Helper to calculate bonuses
+  const getBonusInfo = (product: Product) => {
+      const originalBonus = product.points - product.amount;
+      
+      // 1. Calculate components
+      let firstRechargeBonus = 0;
+      if (isFirstRecharge) {
+          firstRechargeBonus = Math.floor(product.amount * FIRST_RECHARGE_PERCENT);
+      }
+      
+      // 2. Apply Frenzy Multiplier to each component (matching backend logic)
+      let finalBaseBonus = originalBonus;
+      let finalFirstRechargeBonus = firstRechargeBonus;
+      
+      // Assuming Frenzy is always active based on UI
+      finalBaseBonus = Math.floor(originalBonus * FRENZY_MULTIPLIER);
+      finalFirstRechargeBonus = Math.floor(firstRechargeBonus * FRENZY_MULTIPLIER);
+      
+      const totalBonus = finalBaseBonus + finalFirstRechargeBonus;
+      
+      return {
+          originalBonus,
+          totalBonus,
+          hasExtra: totalBonus > originalBonus,
+          tags: [
+              isFirstRecharge && '首充+10%',
+              '狂欢x1.5倍'
+          ].filter(Boolean)
+      };
+  };
+
+  // Cumulative Progress
+  const cumulativeProgress = (recentRechargeTotal % CUMULATIVE_GOAL) / CUMULATIVE_GOAL * 100;
+  const nextGoal = CUMULATIVE_GOAL - (recentRechargeTotal % CUMULATIVE_GOAL);
+  const completedCycles = Math.floor(recentRechargeTotal / CUMULATIVE_GOAL);
 
   return (
     <div className={`bg-white rounded-2xl shadow-lg shadow-slate-200/50 overflow-hidden border border-slate-100 flex flex-col ${className || ''}`}>
       
       {/* Header Section */}
       <div className="bg-gradient-to-r from-brand-600 to-indigo-700 p-6 text-white relative overflow-hidden flex-shrink-0">
-        
-        {/* Countdown Overlay */}
         <div className="absolute top-4 right-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 py-1 text-xs font-mono font-medium flex items-center gap-2 animate-pulse">
            <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping" />
            活动仅剩 {String(timeLeft.hours).padStart(2, '0')}:{String(timeLeft.minutes).padStart(2, '0')}:{String(timeLeft.seconds).padStart(2, '0')}
@@ -227,182 +338,231 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <LambertCoin size={32} variant="brand" className="shadow-sm rounded-full" />
-              朗伯币充值中心
+              充值中心
             </h1>
             <span className="bg-gradient-to-r from-amber-300 to-orange-400 text-amber-900 px-2 py-0.5 rounded text-xs font-bold shadow-lg flex items-center gap-1">
               <Flame className="w-3 h-3 fill-amber-900" />
-              限时狂欢・多福利叠加
+              限时狂欢中
             </span>
           </div>
-          <p className="text-brand-100 text-sm font-medium flex items-center gap-1">
-            1 USD = 1 <LambertCoin size={16} variant="plain" className="text-brand-200" /> 朗伯币・充越多・赠越多
-          </p>
         </div>
 
-        {/* Promo Banner - With Icons */}
+        {/* Activity Banners */}
         <div className="mt-6 flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-          {/* Newcomer */}
-          <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/20 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
-               <Sparkles className="w-8 h-8 text-white" />
-            </div>
-            <div className="text-xs text-brand-200 font-bold mb-1 flex items-center gap-1">
-              <Gift className="w-3 h-3" /> 新人首充福利
-            </div>
-            <div className="text-sm font-medium">首次充值任意档位</div>
-            <div className="text-xs text-white/80">额外再赠 10%</div>
-          </div>
-          {/* Limited Time */}
-          <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/20 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
-               <Flame className="w-8 h-8 text-white" />
-            </div>
-            <div className="text-xs text-brand-200 font-bold mb-1 flex items-center gap-1">
-              <Zap className="w-3 h-3" /> 限时狂欢加成
-            </div>
-            <div className="text-sm font-medium">活动期间充值</div>
-            <div className="text-xs text-white/80">赠送部分 ×1.5 倍</div>
-          </div>
-          {/* Accumulated */}
-          <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/20 relative overflow-hidden group">
-             <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
-               <Coins className="w-8 h-8 text-white" />
-            </div>
-            <div className="text-xs text-brand-200 font-bold mb-1 flex items-center gap-1">
-              <Crown className="w-3 h-3" /> 累计充值好礼
-            </div>
-            <div className="text-sm font-medium">7 天内累计满 $200</div>
-            <div className="text-xs text-white/80">额外赠送 30 朗伯币</div>
-          </div>
-           {/* Invite */}
-           <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/20 relative overflow-hidden group">
-             <div className="absolute top-0 right-0 p-1 opacity-10 group-hover:opacity-20 transition-opacity">
-               <Gift className="w-8 h-8 text-white" />
-            </div>
-            <div className="text-xs text-brand-200 font-bold mb-1 flex items-center gap-1">
-               <Sparkles className="w-3 h-3" /> 邀请有礼
-            </div>
-            <div className="text-sm font-medium">邀请好友成功充值</div>
-            <div className="text-xs text-white/80">双方各得 20 朗伯币</div>
-          </div>
+             {/* First Recharge Intro Card */}
+             {isFirstRecharge && (
+                 <div className="bg-gradient-to-br from-rose-500/40 to-orange-500/40 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/30 relative overflow-hidden group">
+                    <div className="text-xs text-rose-100 font-bold mb-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> 新人首充
+                    </div>
+                    <div className="text-sm font-bold text-white">额外赠送 10%</div>
+                    <div className="text-[10px] text-white/70 mt-1">仅限首次充值有效</div>
+                    <div className="absolute -right-2 -bottom-2 opacity-20 group-hover:scale-110 transition-transform duration-500">
+                        <Coins className="w-12 h-12 text-white" />
+                    </div>
+                 </div>
+             )}
+
+             {/* Frenzy Intro Card */}
+             <div className="bg-gradient-to-br from-amber-500/40 to-rose-500/40 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/30 relative overflow-hidden group">
+                <div className="text-xs text-amber-100 font-bold mb-1 flex items-center gap-1">
+                    <Flame className="w-3 h-3" /> 限时狂欢
+                </div>
+                <div className="text-sm font-bold text-white">所有赠币 x1.5 倍</div>
+                <div className="text-[10px] text-white/70 mt-1">活动期间倍率已生效</div>
+                <div className="absolute -right-2 -bottom-2 opacity-20 group-hover:scale-110 transition-transform duration-500">
+                    <Zap className="w-12 h-12 text-white" />
+                </div>
+             </div>
+
+             {/* Cumulative Progress Card */}
+             <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[240px] border border-white/20 relative overflow-hidden flex flex-col justify-center">
+                <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-bold text-brand-100 flex items-center gap-1">
+                        <Crown className="w-3 h-3" /> 累计充值 ({completedCycles}轮)
+                    </span>
+                    <span className="text-xs text-white/90 font-mono">${recentRechargeTotal}</span>
+                </div>
+                <div className="w-full bg-black/20 rounded-full h-1.5 mb-1">
+                    <div className="bg-amber-400 h-1.5 rounded-full transition-all duration-1000" style={{ width: `${cumulativeProgress}%` }} />
+                </div>
+                <div className="text-[10px] text-white/70">
+                    再充值 <span className="text-white font-bold">${nextGoal}</span> 获 {CUMULATIVE_REWARD} 赠币
+                </div>
+             </div>
+
+             {/* Invite Card */}
+             <div className="bg-white/10 backdrop-blur-md rounded-lg p-3 min-w-[180px] border border-white/20 relative overflow-hidden group cursor-pointer hover:bg-white/20 transition-colors"
+                  onClick={() => setShowInviteInput(!showInviteInput)}>
+                <div className="text-xs text-brand-200 font-bold mb-1 flex items-center gap-1">
+                    <Gift className="w-3 h-3" /> 邀请有礼
+                </div>
+                <div className="text-sm font-bold text-white">邀请获得 50% 赠币</div>
+                <div className="text-xs text-white/80 flex items-center gap-1 mt-1">
+                    点击查看/填写 <ArrowRight className="w-3 h-3" />
+                </div>
+             </div>
         </div>
       </div>
 
+      {/* Invite Code Section (Expandable) */}
+      {showInviteInput && (
+          <div className="bg-slate-50 border-b border-slate-100 p-4 animate-in slide-in-from-top-2">
+              <div className="flex flex-col md:flex-row gap-4">
+                  {/* My Code */}
+                  <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+                      <div className="text-xs text-slate-500 mb-1">我的邀请码</div>
+                      <div className="flex items-center justify-between">
+                          <span className="text-lg font-mono font-bold text-brand-700 tracking-wider">
+                              {inviteCode || '加载中...'}
+                          </span>
+                          <button 
+                            onClick={() => {
+                                if (inviteCode) {
+                                    navigator.clipboard.writeText(inviteCode);
+                                    // Optional toast
+                                }
+                            }}
+                            className="text-slate-400 hover:text-brand-600 p-1">
+                              <Copy className="w-4 h-4" />
+                          </button>
+                      </div>
+                  </div>
+                  {/* Enter Code */}
+                  <div className="flex-1 bg-white border border-slate-200 rounded-lg p-3 shadow-sm">
+                      <div className="text-xs text-slate-500 mb-1 flex justify-between items-center">
+                          <span>填写好友邀请码</span>
+                          <span className="text-[10px] text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">首充获赠50% (新手体验除外)</span>
+                      </div>
+                      <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="输入6位邀请码"
+                            maxLength={6}
+                            value={inputCode}
+                            onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                            disabled={inviteStatus === 'success'}
+                            className="flex-1 border border-slate-200 rounded px-2 py-1 text-sm font-mono focus:outline-none focus:border-brand-500"
+                          />
+                          <button 
+                            onClick={handleRedeemInvite}
+                            disabled={!inputCode || inviteStatus === 'success' || inviteStatus === 'verifying'}
+                            className="bg-brand-600 text-white text-xs px-3 py-1 rounded hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                              {inviteStatus === 'verifying' ? '...' : inviteStatus === 'success' ? '已绑定' : '兑换'}
+                          </button>
+                      </div>
+                      {inviteStatus === 'success' && <div className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 邀请码已绑定，首充后生效</div>}
+                      {inviteStatus === 'error' && <div className="text-xs text-red-500 mt-1">{inviteError}</div>}
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* Content */}
       <div className="p-6">
-        {/* Products Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {products.map((product) => {
+          {[...products].sort((a, b) => {
+              const isExperienceA = a.amount === 1;
+              const isExperienceB = b.amount === 1;
+              
+              if (hasPurchasedExperience) {
+                  if (isExperienceA && !isExperienceB) return 1;
+                  if (!isExperienceA && isExperienceB) return -1;
+              }
+              return 0;
+          }).map((product) => {
             const isSelected = selectedProduct?.id === product.id;
             const config = PRODUCT_CONFIG[product.amount] || { 
               title: product.name, 
               buttonText: '立即充值', 
-              bonusText: `赠送：${product.points > product.amount ? '+' + (product.points - product.amount) : '——'}`,
               icon: Sparkles
             };
             const Icon = config.icon || Sparkles;
-            
-            // Determine styles based on tier and selection
-            let cardBaseClass = "relative group rounded-2xl border-2 transition-all duration-300 text-left flex flex-col h-full overflow-hidden hover:-translate-y-1";
-            let cardStateClass = "";
-            let iconClass = "w-5 h-5";
-            let titleClass = "font-bold text-base";
-            let priceClass = "text-3xl font-extrabold tracking-tight";
-            let bonusClass = "text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 w-fit";
+            const { originalBonus, totalBonus, hasExtra, tags } = getBonusInfo(product);
 
-            if (config.isPremium) {
-                // Premium Gold/Dark style
-                cardStateClass = isSelected 
-                    ? "bg-gradient-to-br from-[#FFF9F0] via-[#FFF5E0] to-[#FFE8CC] border-amber-400 shadow-amber-200/50 shadow-xl scale-[1.02] ring-2 ring-amber-200/50 ring-offset-2" 
-                    : "bg-gradient-to-br from-white to-amber-50/50 border-amber-100 hover:border-amber-300 hover:shadow-lg hover:shadow-amber-100/40";
-                
-                iconClass = "w-5 h-5 text-amber-500 fill-amber-500/20";
-                titleClass = isSelected ? "font-bold text-base text-amber-900" : "font-bold text-base text-slate-700 group-hover:text-amber-800";
-                priceClass = isSelected ? "text-4xl font-extrabold text-amber-900" : "text-4xl font-extrabold text-slate-900 group-hover:text-amber-900";
-                bonusClass = "text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 w-fit bg-amber-100 text-amber-700 border border-amber-200/50";
-            } else {
-                // Standard style
-                cardStateClass = isSelected
-                    ? "bg-white border-brand-500 shadow-xl shadow-brand-500/10 scale-[1.02] ring-2 ring-brand-100 ring-offset-2"
-                    : "bg-white border-slate-100 hover:border-brand-200 hover:shadow-lg hover:shadow-slate-200/50";
-                 
-                iconClass = isSelected ? "w-5 h-5 text-brand-600 fill-brand-100" : "w-5 h-5 text-slate-400 group-hover:text-brand-500 transition-colors";
-                titleClass = isSelected ? "font-bold text-base text-brand-700" : "font-bold text-base text-slate-700 group-hover:text-brand-700 transition-colors";
-                priceClass = isSelected ? "text-4xl font-extrabold text-slate-900" : "text-4xl font-extrabold text-slate-900";
-                bonusClass = "text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 w-fit bg-rose-50 text-rose-600 border border-rose-100";
-            }
+            const isExperienceProduct = product.amount === 1;
+            const isSoldOut = isExperienceProduct && hasPurchasedExperience;
+
+            let cardStateClass = isSelected 
+                ? "bg-white border-brand-500 shadow-xl shadow-brand-500/10 ring-1 ring-brand-500 transform scale-[1.02]"
+                : "bg-white border-slate-100 hover:border-brand-200 hover:shadow-lg";
             
+            if (config.isPremium) {
+                cardStateClass = isSelected 
+                    ? "bg-gradient-to-br from-[#FFF9F0] to-[#FFE8CC] border-amber-400 shadow-amber-200/50 ring-1 ring-amber-400 scale-[1.02]"
+                    : "bg-gradient-to-br from-white to-amber-50 border-amber-100 hover:border-amber-300";
+            }
+
+            if (isSoldOut) {
+                cardStateClass = "bg-slate-50 border-slate-100 opacity-60 cursor-not-allowed grayscale";
+            }
+
             return (
               <button
                 key={product.id}
-                onClick={() => handleProductSelect(product)}
-                className={`${cardBaseClass} ${cardStateClass}`}
+                onClick={() => !isSoldOut && handleProductSelect(product)}
+                disabled={isSoldOut}
+                className={`relative group rounded-2xl border-2 transition-all duration-300 text-left flex flex-col h-full overflow-hidden ${cardStateClass}`}
               >
-                {/* Premium Background Decoration */}
-                {config.isPremium && (
-                   <>
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-amber-200/20 to-orange-300/20 rounded-bl-[100px] blur-2xl group-hover:scale-125 transition-transform duration-700 pointer-events-none" />
-                    <div className="absolute bottom-0 left-0 w-24 h-24 bg-gradient-to-tr from-amber-100/30 to-transparent rounded-tr-[80px] blur-xl pointer-events-none" />
-                   </>
+                {/* Sold Out Overlay */}
+                {isSoldOut && (
+                    <div className="absolute inset-0 bg-slate-100/10 z-30 flex items-center justify-center backdrop-blur-[1px]">
+                        <span className="bg-slate-800 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg transform -rotate-12">
+                            每人限购一次
+                        </span>
+                    </div>
+                )}
+
+                {/* First Recharge Badge */}
+                {isFirstRecharge && Math.floor(product.amount * FIRST_RECHARGE_PERCENT) > 0 && (
+                    <div className="absolute top-0 right-0 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-bl-lg z-20">
+                        新人首充
+                    </div>
                 )}
 
                 <div className="p-5 flex flex-col h-full w-full relative z-10">
-                    {/* Header: Icon + Title + Tag */}
                     <div className="flex justify-between items-center mb-4 w-full">
                         <div className="flex items-center gap-2">
-                            <div className={`p-1.5 rounded-lg ${config.isPremium ? 'bg-amber-100/50' : 'bg-slate-100 group-hover:bg-brand-50 transition-colors'}`}>
-                                <Icon className={iconClass} />
+                            <div className={`p-1.5 rounded-lg ${config.isPremium ? 'bg-amber-100/50' : 'bg-slate-100 group-hover:bg-brand-50'}`}>
+                                <Icon className={`w-5 h-5 ${config.isPremium ? 'text-amber-500' : 'text-slate-400 group-hover:text-brand-500'}`} />
                             </div>
-                            <span className={titleClass}>{config.title}</span>
+                            <span className={`font-bold ${config.isPremium ? 'text-amber-900' : 'text-slate-700'}`}>{config.title}</span>
                         </div>
-                        {config.highlight && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                config.isPremium 
-                                ? 'bg-gradient-to-r from-rose-500 to-orange-500 text-white border-transparent shadow-sm' 
-                                : 'bg-rose-50 text-rose-600 border-rose-100'
-                            }`}>
-                                热卖
-                            </span>
-                        )}
                     </div>
 
-                    {/* Main Price Area */}
-                    <div className="flex items-baseline gap-1 mb-1">
-                        <span className={`text-lg font-bold ${config.isPremium ? 'text-amber-900/60' : 'text-slate-400'}`}>$</span>
-                        <span className={priceClass}>{product.amount}</span>
-                    </div>
-                    <div className={`text-xs mb-4 ${config.isPremium ? 'text-amber-800/60' : 'text-slate-400'}`}>
-                        实付：${product.amount}
+                    <div className="mb-4">
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-lg font-bold text-slate-400">$</span>
+                            <span className={`text-4xl font-extrabold ${config.isPremium ? 'text-amber-900' : 'text-slate-900'}`}>{product.amount}</span>
+                        </div>
                     </div>
 
-                    {/* Divider */}
-                    <div className={`w-full h-px mb-4 ${config.isPremium ? 'bg-amber-200/30' : 'bg-slate-100'}`} />
-
-                    {/* Benefits Section */}
-                    <div className="space-y-3 flex-grow">
-                        <div className="flex justify-between items-center">
-                            <span className={`text-sm ${config.isPremium ? 'text-amber-800/70' : 'text-slate-500'}`}>到账</span>
-                            <div className={`text-lg font-bold ${config.isPremium ? 'text-amber-900' : 'text-slate-900'} flex items-center gap-1`}>
-                                {product.points} 
-                                <LambertCoin size={16} variant={config.isPremium ? 'gold' : 'brand'} />
-                                <span className="text-xs font-normal opacity-70">朗伯币</span>
+                    <div className="mt-auto space-y-2">
+                        <div className={`flex justify-between items-center p-2 rounded-lg ${config.isPremium ? 'bg-amber-50' : 'bg-slate-50'}`}>
+                            <span className="text-xs text-slate-500">到账</span>
+                            <div className="text-right">
+                                <div className={`font-bold ${config.isPremium ? 'text-amber-700' : 'text-brand-700'}`}>
+                                    {product.amount + totalBonus} 朗伯币
+                                </div>
+                                {hasExtra && (
+                                    <div className="text-[10px] text-slate-400 line-through">
+                                        原到账 {product.points}
+                                    </div>
+                                )}
                             </div>
                         </div>
                         
-                        <div className="flex justify-between items-center min-h-[24px]">
-                             <span className={`text-sm ${config.isPremium ? 'text-amber-800/70' : 'text-slate-500'}`}>
-                                {config.bonusText.includes('+') ? '赠送' : ''}
-                             </span>
-                             
-                             {config.bonusText.includes('+') ? (
-                                <div className={bonusClass}>
-                                     <Flame className="w-3 h-3 fill-current" />
-                                     <span>{config.bonusText.replace('赠送：', '')}</span>
-                                </div>
-                             ) : (
-                                <span className={`text-xs ${config.isPremium ? 'text-amber-800/40' : 'text-slate-300'}`}>——</span>
-                             )}
-                        </div>
+                        {/* Bonus Tags */}
+                        {hasExtra && (
+                            <div className="flex flex-wrap gap-1">
+                                {tags.map((tag, i) => (
+                                    <span key={i} className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-600">
+                                        {tag}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
               </button>
@@ -410,72 +570,22 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           })}
         </div>
 
-        {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-rose-50 border border-rose-100 text-rose-600 p-4 rounded-xl flex items-start gap-3">
-            <div className="text-sm font-medium">{error}</div>
+          <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm flex items-center gap-2 animate-pulse">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+            {error}
           </div>
         )}
 
-        {/* Action Bar (Main Payment Button) */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-50 p-4 rounded-xl border border-slate-100">
-          <div className="text-sm text-slate-600 flex flex-wrap gap-4 items-center">
-            <span>支付金额：<strong className="text-slate-900 text-lg">${amount}</strong></span>
-            <span className="flex items-center gap-1">
-                预计到账：
-                <strong className="text-emerald-600 text-lg flex items-center gap-1">
-                    {selectedProduct ? selectedProduct.points : amount} 
-                    <LambertCoin size={20} variant="brand" />
-                </strong>
-            </span>
-          </div>
-          
-          <Button
-            onClick={handleRecharge}
-            disabled={loading || amount <= 0}
-            className={`w-full md:w-auto px-8 py-3 text-base font-bold shadow-lg transition-all transform active:scale-95 rounded-full ${
-                currentConfig?.isPremium 
-                ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:shadow-amber-500/30 text-white border-none' 
-                : 'bg-gradient-to-r from-brand-600 to-indigo-600 hover:shadow-brand-500/30 text-white border-none'
-            }`}
-          >
-            {loading ? (
-              <>
-                正在创建订单...
-              </>
-            ) : (
-              currentConfig?.buttonText || '立即充值'
-            )}
-          </Button>
-        </div>
-
-        {/* Footer Notes (Compliance Version) */}
-        <div className="mt-8 pt-6 border-t border-slate-100/50">
-          <div className="flex items-start gap-3">
-             <div className="mt-1 flex-shrink-0 text-slate-400">
-                <ShieldCheck className="w-4 h-4" />
-             </div>
-             <div className="text-xs text-slate-500 space-y-1">
-                <p className="leading-relaxed">
-                  点击充值即代表您已阅读并同意
-                  <button 
-                    onClick={() => setShowAgreement(true)}
-                    className="text-brand-600 hover:text-brand-700 font-semibold underline underline-offset-2 ml-1 cursor-pointer transition-colors"
-                  >
-                    《平台积分充值及使用协议》
-                  </button>
-                </p>
-                <p className="text-[10px] text-slate-400 leading-tight">
-                  本平台积分仅用于兑换服务，严禁用于任何非法交易、炒作或提现。未成年人请在监护人陪同下操作。
-                  <br />
-                  充值实时到账，赠送部分为平台福利，活动最终解释权归平台所有。
-                </p>
-             </div>
-          </div>
-        </div>
+        <Button
+          size="lg"
+          className="w-full text-lg font-bold py-6 shadow-xl shadow-brand-500/20 hover:shadow-brand-500/40 hover:-translate-y-0.5 transition-all"
+          onClick={handleRecharge}
+          isLoading={loading}
+        >
+          {loading ? '正在创建订单...' : `支付 $${amount} 立即充值`}
+        </Button>
       </div>
-
-      <RechargeAgreementDialog open={showAgreement} onOpenChange={setShowAgreement} />
     </div>
   );
 }

@@ -20,15 +20,22 @@ interface RechargeDialogProps {
   appId: string;
 }
 
+// Activity Constants
+const FRENZY_MULTIPLIER = 1.5;
+const FIRST_RECHARGE_PERCENT = 0.10;
+
 export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProps) {
   const [amount, setAmount] = useState<number>(10);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isFirstRecharge, setIsFirstRecharge] = useState(false);
+  const [hasPurchasedExperience, setHasPurchasedExperience] = useState(false);
 
   useEffect(() => {
     if (open) {
+      // Fetch Products
       supabase
         .from('recharge_products')
         .select('*')
@@ -43,8 +50,92 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
             }
           }
         });
+
+      // Check First Recharge Status
+      const checkFirstRecharge = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { count, error: countError } = await supabase
+            .from('platform_orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'paid');
+        
+        if (!countError) {
+            setIsFirstRecharge(count === 0);
+        }
+
+        // Check if user has purchased the 'New User Experience' (amount = 1)
+        let hasPurchased = false;
+
+        // 1. Direct query (needs RLS)
+        const { count: experienceCount, error: experienceError } = await supabase
+            .from('platform_orders')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'paid')
+            .eq('amount', 100); // 100 cents = $1
+        
+        if (!experienceError && experienceCount !== null && experienceCount > 0) {
+            hasPurchased = true;
+        }
+
+        // 2. RPC fallback (bypasses RLS via SECURITY DEFINER)
+        if (!hasPurchased) {
+             const { data: expProducts } = await supabase
+                .from('recharge_products')
+                .select('id')
+                .eq('amount', 1)
+                .single();
+             
+             if (expProducts) {
+                  const { data: rpcCount } = await supabase.rpc('get_user_product_purchase_count', {
+                      _app_id: appId,
+                      _product_id: expProducts.id
+                  });
+                  if (rpcCount && rpcCount > 0) {
+                      hasPurchased = true;
+                  }
+             }
+        }
+
+        if (hasPurchased) {
+            setHasPurchasedExperience(true);
+        }
+      };
+      checkFirstRecharge();
     }
   }, [open]);
+
+  // Helper to calculate bonuses
+  const getBonusInfo = (product: Product) => {
+      const originalBonus = product.points - product.amount;
+      
+      // 1. Calculate components
+      let firstRechargeBonus = 0;
+      if (isFirstRecharge) {
+          firstRechargeBonus = Math.floor(product.amount * FIRST_RECHARGE_PERCENT);
+      }
+      
+      // 2. Apply Frenzy Multiplier to each component (matching backend logic)
+      let finalBaseBonus = originalBonus;
+      let finalFirstRechargeBonus = firstRechargeBonus;
+      
+      // Assuming Frenzy is always active based on UI
+      finalBaseBonus = Math.floor(originalBonus * FRENZY_MULTIPLIER);
+      finalFirstRechargeBonus = Math.floor(firstRechargeBonus * FRENZY_MULTIPLIER);
+      
+      const totalBonus = finalBaseBonus + finalFirstRechargeBonus;
+      
+      return {
+          originalBonus,
+          totalBonus,
+          hasExtra: totalBonus > originalBonus,
+          tags: [
+              isFirstRecharge && '首充+10%',
+              '狂欢x1.5倍'
+          ].filter(Boolean)
+      };
+  };
 
   const handleProductSelect = (product: Product) => {
     setSelectedProduct(product);
@@ -186,20 +277,50 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
               {products.map((product) => {
                 const isSelected = selectedProduct?.id === product.id;
-                const bonusPoints = product.points - product.amount;
+                const { originalBonus, totalBonus, hasExtra, tags } = getBonusInfo(product);
+
+                const isExperienceProduct = product.amount === 1;
+                const isSoldOut = isExperienceProduct && hasPurchasedExperience;
                 
                 return (
                   <button
                     key={product.id}
-                    onClick={() => handleProductSelect(product)}
+                    onClick={() => !isSoldOut && handleProductSelect(product)}
+                    disabled={isSoldOut}
                     className={`relative group p-4 rounded-xl border-2 transition-all duration-200 text-left flex flex-col h-full ${
                       isSelected
                         ? 'bg-brand-50 border-brand-500 shadow-md scale-[1.02]'
                         : 'bg-white border-slate-100 hover:border-brand-200 hover:shadow-sm'
-                    }`}
+                    } ${isSoldOut ? 'opacity-60 cursor-not-allowed grayscale bg-slate-50' : ''}`}
                   >
+                    {/* Sold Out Overlay */}
+                    {isSoldOut && (
+                        <div className="absolute inset-0 bg-slate-100/10 z-30 flex items-center justify-center backdrop-blur-[1px]">
+                            <span className="bg-slate-800 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg transform -rotate-12">
+                                每人限购一次
+                            </span>
+                        </div>
+                    )}
+
+                    {/* First Recharge Badge */}
+                    {isFirstRecharge && (
+                        <div className="absolute top-0 left-0 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-br-lg rounded-tl-lg z-20 shadow-sm">
+                            新人首充
+                        </div>
+                    )}
+                    {/* Tags */}
+                    {hasExtra && (
+                        <div className="absolute top-0 right-0 z-20 flex flex-col items-end gap-1 p-1">
+                            {tags.map((tag, i) => (
+                                <span key={i} className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500 text-white shadow-sm">
+                                    {tag}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+
                     {isSelected && (
-                      <div className="absolute -top-3 -right-3 bg-brand-500 text-white p-1 rounded-full shadow-md">
+                      <div className="absolute -top-3 -right-3 bg-brand-500 text-white p-1 rounded-full shadow-md z-30">
                         <CheckIcon className="w-4 h-4" />
                       </div>
                     )}
@@ -229,13 +350,20 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
                     <div className="mt-auto space-y-2">
                       <div className="flex justify-between items-center bg-slate-50 p-2 rounded-lg group-hover:bg-brand-100/30 transition-colors">
                         <span className="text-xs text-slate-500">到账</span>
-                        <span className="font-bold text-brand-700">{product.points} 朗伯币</span>
+                        <div className="text-right">
+                            <span className="font-bold text-brand-700 block">{product.amount + totalBonus} 朗伯币</span>
+                            {hasExtra && (
+                                <span className="text-[10px] text-slate-400 line-through">
+                                    原到账 {product.points}
+                                </span>
+                            )}
+                        </div>
                       </div>
                       
-                      {bonusPoints > 0 && (
+                      {hasExtra && (
                         <div className="flex justify-between items-center px-2">
                           <span className="text-xs text-slate-400">多赠</span>
-                          <span className="text-xs font-bold text-amber-500">+{bonusPoints} 朗伯币</span>
+                          <span className="text-xs font-bold text-amber-500">+{totalBonus - originalBonus} 朗伯币</span>
                         </div>
                       )}
                       
@@ -265,7 +393,7 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
               
               <Button
                 onClick={handleRecharge}
-                disabled={loading || amount <= 0}
+                disabled={loading || amount <= 0 || (selectedProduct?.amount === 1 && hasPurchasedExperience)}
                 className="w-full md:w-auto px-8 py-3 text-base font-bold shadow-lg shadow-brand-500/20 hover:shadow-brand-500/30 transition-all transform active:scale-95"
               >
                 {loading ? (

@@ -307,22 +307,53 @@ serve(async (req) => {
     const externalUserId = order.platform_users.external_user_id;
 
     // Determine credit amount (points)
-    let creditAmount = order.amount; // default to amount if no metadata
+    let basePoints = order.amount; // default to amount if no metadata
     if (order.metadata && typeof order.metadata.points === 'number') {
-        creditAmount = order.metadata.points;
+        basePoints = order.metadata.points;
     } else if (order.metadata && typeof order.metadata.points === 'string') {
-        creditAmount = Number(order.metadata.points);
+        basePoints = Number(order.metadata.points);
     } else {
         // Fallback: If no points metadata, assume 1 USD = 1 Point (amount is in cents)
-        creditAmount = Math.floor(order.amount / 100);
+        basePoints = Math.floor(order.amount / 100);
     }
 
-    console.log(`Crediting wallet. Order Amount (cents): ${order.amount}, Credit Points: ${creditAmount}`);
+    // --- ACTIVITY LOGIC START ---
+    // Import shared logic dynamically or assume it's available via relative import at top
+    // Since we can't easily add import at top via SearchReplace without risk, 
+    // we will rely on Deno's ability to import inside function or use a separate tool call to add import.
+    // However, best practice is top-level import.
+    // Let's try to add import at top first in a separate step?
+    // Or use dynamic import() which is supported in Deno.
+    
+    // Dynamic import for shared logic
+    const { calculateRechargeBonuses } = await import("../_shared/recharge-bonus.ts");
+    
+    const { totalBonus, bonusDetails } = await calculateRechargeBonuses(
+        supabase, 
+        order, 
+        basePoints, 
+        externalUserId
+    );
+
+    const finalCreditAmount = basePoints + totalBonus;
+    console.log(`Crediting wallet. Order Amount (cents): ${order.amount}, Base Points: ${basePoints}, Bonus: ${totalBonus}, Final: ${finalCreditAmount}. Details:`, bonusDetails);
+
+    // Update order metadata with bonus info
+    if (totalBonus > 0) {
+        await supabase.from('platform_orders').update({
+            metadata: {
+                ...order.metadata,
+                bonus_points: totalBonus,
+                bonus_details: bonusDetails
+            }
+        }).eq('id', order.id);
+    }
+    // --- ACTIVITY LOGIC END ---
 
     // Use explicit type casting if needed, but RPC now accepts text for user_id
     const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
       _user_id: externalUserId,
-      _amount: creditAmount, // Use calculated points
+      _amount: finalCreditAmount, // Use calculated points with bonus
       _type: 'deposit',
       _app_id: order.app_id,
       _order_id: order.id,
@@ -340,6 +371,32 @@ serve(async (req) => {
     }
 
     console.log(`Order ${orderNo} processed successfully. Wallet updated. New Balance: ${rpcResult.new_balance}`);
+
+    // --- CUMULATIVE REWARD CHECK ---
+    try {
+        const { checkAndAwardCumulative } = await import("../_shared/cumulative-check.ts");
+        // Use order.platform_user_id (UUID)
+        await checkAndAwardCumulative(supabase, order.platform_user_id, order.app_id);
+    } catch (e) {
+        console.error('Cumulative check failed:', e);
+    }
+    // --- CUMULATIVE REWARD END ---
+
+    // --- INVITE REWARD CHECK ---
+    try {
+        const { checkAndAwardInvite } = await import("../_shared/invite-check.ts");
+        await checkAndAwardInvite(
+            supabase, 
+            externalUserId, 
+            order.platform_user_id, 
+            order.app_id, 
+            order.amount
+        );
+    } catch (e) {
+        console.error('Invite reward check failed:', e);
+    }
+    // --- INVITE REWARD END ---
+
     return new Response(JSON.stringify({ 
         success: true, 
         message: "Wallet credited successfully",
