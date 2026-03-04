@@ -37,7 +37,8 @@ serve(async (req) => {
     const { data: result, error: rpcError } = await supabase.rpc('redeem_invite_code', {
       _app_id: appContext.app_id,
       _code: code,
-      _platform_user_id: user.id
+      _platform_user_id: user.id,
+      _required_type: 'beta'
     });
 
     if (rpcError) throw rpcError;

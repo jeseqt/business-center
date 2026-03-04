@@ -12,6 +12,7 @@ interface InviteCode {
   id: string;
   code: string;
   app_id: string;
+  type: 'beta' | 'activity';
   valid_days: number;
   max_usage: number;
   used_count: number;
@@ -29,11 +30,13 @@ export default function InviteManagement() {
   const [apps, setApps] = useState<App[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [currentType, setCurrentType] = useState<'beta' | 'activity'>('beta');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   
   // Generation State
   const [genAppId, setGenAppId] = useState('');
+  const [genType, setGenType] = useState<'beta' | 'activity'>('beta');
   const [genCount, setGenCount] = useState(1);
   const [genValidDays, setGenValidDays] = useState(30);
   const [genMaxUsage, setGenMaxUsage] = useState(1);
@@ -67,9 +70,18 @@ export default function InviteManagement() {
       const from = (page - 1) * 20;
       const to = from + 19;
       
-      const { data: resultData, error } = await supabase
+      let query = supabase
         .from('platform_invite_codes')
-        .select('*')
+        .select('*');
+
+      if (currentType === 'activity') {
+        // 兼容旧数据：type 为 null 的也被视为 activity
+        query = query.or('type.eq.activity,type.is.null');
+      } else {
+        query = query.eq('type', currentType);
+      }
+      
+      const { data: resultData, error } = await query
         .range(from, to)
         .order('created_at', { ascending: false });
 
@@ -109,7 +121,7 @@ export default function InviteManagement() {
 
   useEffect(() => {
     loadData();
-  }, [page]);
+  }, [page, currentType]);
 
     const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +130,7 @@ export default function InviteManagement() {
       const { error } = await supabase.functions.invoke('admin-invite-manage', {
         body: {
           app_id: genAppId,
+          type: genType,
           count: genCount,
           valid_days: genValidDays,
           max_usage: genMaxUsage
@@ -157,12 +170,35 @@ export default function InviteManagement() {
         description="生成和管理应用邀请码，控制用户注册权限"
         icon={Ticket}
         action={
-          <Button onClick={() => setIsModalOpen(true)} className="gap-2">
+          <Button onClick={() => { setGenType(currentType); setIsModalOpen(true); }} className="gap-2">
             <Plus className="h-4 w-4" />
             批量生成
           </Button>
         }
       />
+
+      <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => { setCurrentType('beta'); setPage(1); }}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            currentType === 'beta' 
+              ? 'bg-white text-gray-900 shadow-sm' 
+              : 'text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          内测码
+        </button>
+        <button
+          onClick={() => { setCurrentType('activity'); setPage(1); }}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            currentType === 'activity' 
+              ? 'bg-white text-gray-900 shadow-sm' 
+              : 'text-gray-500 hover:text-gray-900'
+          }`}
+        >
+          邀请码
+        </button>
+      </div>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -293,6 +329,32 @@ export default function InviteManagement() {
         }
       >
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium leading-none mb-2 text-gray-700">邀请码类型 (Type)</label>
+            <div className="flex space-x-4 mb-1">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="genType" 
+                  checked={genType === 'beta'} 
+                  onChange={() => setGenType('beta')}
+                  className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span className="text-sm text-gray-700">内测码</span>
+              </label>
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="genType" 
+                  checked={genType === 'activity'} 
+                  onChange={() => setGenType('activity')}
+                  className="text-indigo-600 focus:ring-indigo-500 h-4 w-4"
+                />
+                <span className="text-sm text-gray-700">邀请码</span>
+              </label>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium leading-none mb-1 text-gray-700">目标应用 (Target App)</label>
             <div className="relative">

@@ -57,11 +57,13 @@ serve(async (req) => {
     if (req.method === 'GET') {
       const url = new URL(req.url);
       const appId = url.searchParams.get('app_id');
+      const type = url.searchParams.get('type');
       const page = parseInt(url.searchParams.get('page') || '1');
       const pageSize = 20;
       
       let query = supabase.from('platform_invite_codes').select('*', { count: 'exact' });
       if (appId) query = query.eq('app_id', appId);
+      if (type) query = query.eq('type', type);
       
       const { data, count, error } = await query
         .range((page - 1) * pageSize, page * pageSize - 1)
@@ -72,7 +74,7 @@ serve(async (req) => {
     }
 
     if (req.method === 'POST') {
-      const { app_id, count = 1, valid_days = 30, max_usage = 1 } = await req.json();
+      const { app_id, count = 1, valid_days = 30, max_usage = 1, type = 'beta' } = await req.json();
       if (!app_id) throw new Error('app_id is required');
 
       const codes: any[] = [];
@@ -87,7 +89,8 @@ serve(async (req) => {
           valid_days,
           max_usage,
           expires_at: expiresAt,
-          created_by: user.id
+          created_by: user.id,
+          type
         });
       }
 

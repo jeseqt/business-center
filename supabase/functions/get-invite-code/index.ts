@@ -101,6 +101,7 @@ serve(async (req) => {
             .insert({
                 app_id: appId,
                 code: result,
+                type: 'activity',
                 created_by: user.id,
                 max_usage: null, // Unlimited
                 status: 'active'

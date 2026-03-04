@@ -325,7 +325,8 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           const { data, error } = await supabase.functions.invoke('redeem-invite', {
               body: {
                   code: inputCode,
-                  app_id: appId
+                  app_id: appId,
+                  required_type: 'activity'
               }
           });
           

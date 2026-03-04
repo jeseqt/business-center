@@ -34,24 +34,45 @@ export async function checkAndAwardInvite(
         return;
     }
 
-    // 3. Check for Invite Binding
-    const { data: inviteBinding, error: bindingError } = await supabase
-        .from('platform_global_user_invites')
-        .select('invite_code_id, platform_invite_codes(created_by, code)')
-        .eq('user_id', authUserId)
-        .maybeSingle();
+    // 3. Check for Invite Binding (Strictly 'activity' type for rewards)
+    // We fetch all invites but only look for the one with type 'activity'.
+    const { data: inviteBindings, error: bindingError } = await supabase
+        .from('platform_user_invites')
+        .select(`
+            invite_code_id, 
+            platform_invite_codes!inner (
+                created_by, 
+                code,
+                type
+            )
+        `)
+        .eq('platform_user_id', platformUserId)
+        .order('created_at', { ascending: false });
 
     if (bindingError) {
         console.error('Invite Reward: Error fetching binding', bindingError);
         return;
     }
 
-    // Use type assertion or optional chaining safely
-    const inviterId = (inviteBinding as any)?.platform_invite_codes?.created_by;
-    const inviteCode = (inviteBinding as any)?.platform_invite_codes?.code;
+    // Find the binding with type 'activity' (Should be unique per user)
+    const validBinding = inviteBindings?.find((b: any) => 
+        b.platform_invite_codes?.created_by && 
+        b.platform_invite_codes?.type === 'activity'
+    );
+    
+    if (!validBinding) {
+        console.log('Invite Reward: No valid activity invite code found (Beta codes do not trigger rewards)');
+        return;
+    }
+
+    const inviterId = validBinding.platform_invite_codes.created_by;
+    const inviteCode = validBinding.platform_invite_codes.code;
+    const inviteType = validBinding.platform_invite_codes.type;
+
+    console.log(`Invite Reward: Found inviter ${inviterId} via code ${inviteCode} (Type: ${inviteType})`);
 
     if (!inviterId) {
-        console.log('Invite Reward: No inviter found');
+        console.log('Invite Reward: No inviter found (double check)');
         return;
     }
 

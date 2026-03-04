@@ -2,8 +2,6 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
-const INVITE_REWARD = 20;
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -22,7 +20,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { code, app_id } = await req.json();
+    const { code, app_id, required_type } = await req.json();
 
     if (!code || !app_id) {
         return new Response(JSON.stringify({ error: 'Missing code or app_id' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -33,56 +31,41 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // 1. Validate Invite Code
-    const { data: invite, error: inviteError } = await supabaseAdmin
-        .from('platform_invite_codes')
-        .select('*')
-        .eq('code', code)
-        .eq('app_id', app_id) // Must match app
-        .eq('status', 'active')
-        .maybeSingle();
-    
-    if (inviteError || !invite) {
-        return new Response(JSON.stringify({ error: 'Invalid invite code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // 2. Check if self-invite
-    if (invite.created_by === user.id) {
-        return new Response(JSON.stringify({ error: 'Cannot redeem your own code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // 3. Check if already used ANY invite code (One-time only per user)
-    const { data: existingUsage, error: usageError } = await supabaseAdmin
-        .from('platform_global_user_invites')
+    // Get Platform User ID
+    // We need to find the platform_user_id corresponding to the auth user
+    // Since platform_users links via external_user_id (which is auth.uid())
+    const { data: platformUser, error: platformError } = await supabaseAdmin
+        .from('platform_users')
         .select('id')
-        .eq('user_id', user.id)
+        .eq('external_user_id', user.id)
+        .eq('app_id', app_id)
         .maybeSingle();
 
-    if (existingUsage) {
-        return new Response(JSON.stringify({ error: 'You have already redeemed an invite code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (platformError || !platformUser) {
+        console.error('Platform user not found for user:', user.id, 'app:', app_id);
+        // Fallback: Try to find ANY platform user for this external_user_id if app_id mismatch?
+        // But RPC requires app_id match for invite code.
+        return new Response(JSON.stringify({ error: 'User profile not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 4. Record Usage
-    const { error: recordError } = await supabaseAdmin
-        .from('platform_global_user_invites')
-        .insert({
-            invite_code_id: invite.id,
-            user_id: user.id
-        });
+    // Call RPC
+    const { data: result, error: rpcError } = await supabaseAdmin.rpc('redeem_invite_code', {
+        _app_id: app_id,
+        _code: code,
+        _platform_user_id: platformUser.id,
+        _required_type: required_type || null
+    });
 
-    if (recordError) {
-        console.error('Record usage error:', recordError);
-        return new Response(JSON.stringify({ error: 'Failed to redeem code' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (rpcError) {
+        console.error('RPC Error:', rpcError);
+        throw rpcError;
     }
 
-    // 5. Update Usage Count
-    await supabaseAdmin
-        .from('platform_invite_codes')
-        .update({ current_usage: (invite.current_usage || 0) + 1 })
-        .eq('id', invite.id);
+    if (!result.success) {
+        return new Response(JSON.stringify({ error: result.error }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
-    // 6. Return Success (Reward will be given on first recharge)
-    return new Response(JSON.stringify({ success: true, message: 'Invite code redeemed successfully' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, message: 'Invite code redeemed successfully', data: result.data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {
     console.error('redeem-invite error:', error);

@@ -8,22 +8,32 @@
 business-center/
 ├── admin-portal/               # [前端] 中台管理后台 (React + Vite)
 ├── supabase/
-│   └── functions/
+│   ├── functions/
+│       ├── _shared/            # 共享中间件 (鉴权、工具类)
 │       ├── admin-app-manage/   # [Admin API] 应用管理 (创建应用/生成密钥)
-│       ├── create-payment/     # [Client API] 统一支付下单接口
-│       ├── report-usage/       # [Client API] 业务用量上报
-│       ├── fetch-config/       # [Client API] 获取动态配置
+│       ├── admin-invite-manage/# [Admin API] 邀请管理 (邀请码/邀请记录)
+│       ├── admin-order-list/   # [Admin API] 订单列表查询
+│       ├── admin-transaction-list/# [Admin API] 交易流水查询
+│       ├── admin-user-action/  # [Admin API] 用户操作 (封禁/解封等)
+│       ├── admin-user-create/  # [Admin API] 创建用户 (手动)
+│       ├── admin-user-list/    # [Admin API] 用户列表查询
+│       ├── admin-wallet-manage/# [Admin API] 钱包管理 (余额调整)
+│       ├── api-verify-invite/  # [Server API] 邀请码验证 (服务端调用)
+│       ├── bagelpay-webhook/   # [Webhook] BagelPay 支付回调
 │       ├── check-version/      # [Client API] 检查新版本
+│       ├── client-auth/        # [Client API] 客户端统一认证
+│       ├── client-wallet/      # [Client API] 客户端钱包 (余额/流水)
+│       ├── create-payment/     # [Client API] 统一支付下单接口 (通用)
+│       ├── create-recharge-order/# [Client API] 创建充值订单 (专用)
+│       ├── fetch-config/       # [Client API] 获取动态配置
 │       ├── fetch-notifications/# [Client API] 获取通知列表
-│       ├── submit-ticket/      # [Client API] 提交工单反馈
-│       └── _shared/            # 共享中间件 (鉴权、工具类)
-├── database/                   # 数据库脚本
-│   ├── 001_platform_schema.sql     # 核心数据库结构
-│   ├── 002_initial_seed.sql        # 初始化种子数据
-│   ├── 004_config_center.sql       # 配置中心表结构
-│   ├── 005_version_control.sql     # 版本管理表结构
-│   ├── 006_notification_center.sql # 通知中心表结构
-│   └── 007_ticket_system.sql       # 工单系统表结构
+│       ├── get-invite-code/    # [Client API] 获取当前用户邀请码
+│       ├── redeem-invite/      # [Client API] 兑换邀请码
+│       ├── report-usage/       # [Client API] 业务用量上报
+│       └── submit-ticket/      # [Client API] 提交工单反馈
+│   └── migrations/             # 数据库迁移脚本 (替代原 database 目录)
+├── _archive/                   # 归档文件
+│   └── database/               # 旧版数据库脚本
 └── README.md                   # 说明文档
 ```
 
@@ -258,3 +268,53 @@ const signature = Hex.stringify(hmacSHA256(stringToSign, appSecret));
 // x-timestamp: timestamp
 // x-app-id: appId
 ```
+
+### 5. 核心业务接口 (Core Business APIs)
+
+本节列出客户端常用的核心业务接口。
+
+#### 5.1 钱包与交易 (Wallet & Transactions)
+
+查询当前用户的钱包余额及交易流水。
+
+*   **接口地址**: `GET /functions/v1/client-wallet`
+*   **权限**: 需携带 User Token (`Authorization: Bearer <TOKEN>`)
+*   **响应示例**:
+    ```json
+    {
+      "wallet": {
+        "id": "wallet_uuid",
+        "balance": 1000,      // 余额 (单位: 分)
+        "currency": "CNY_CENTS"
+      },
+      "transactions": [
+        {
+          "type": "recharge",
+          "amount": 1000,
+          "status": "success",
+          "created_at": "2024-01-01T12:00:00Z"
+        }
+      ]
+    }
+    ```
+
+#### 5.2 充值 (Recharge)
+
+创建充值订单，支持多种支付渠道。
+
+*   **接口地址**: `POST /functions/v1/create-recharge-order`
+*   **权限**: 需携带 User Token
+*   **请求体 (Body)**:
+    ```json
+    {
+      "amount": 1000,       // 充值金额 (分)
+      "product_id": "prod_x", // (可选) 商品ID
+      "channel": "bagelpay"   // 支付渠道: bagelpay, wechat, alipay
+    }
+    ```
+
+#### 5.3 邀请机制 (Invite System)
+
+*   **获取我的邀请码**: `GET /functions/v1/get-invite-code`
+*   **兑换邀请码**: `POST /functions/v1/redeem-invite`
+    *   **Body**: `{ "code": "ABC1234" }`

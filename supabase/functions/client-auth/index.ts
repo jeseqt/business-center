@@ -40,10 +40,11 @@ serve(async (req) => {
             .select('id')
             .eq('code', invite_code)
             .eq('app_id', app_id)
-            .eq('status', 'active');
+            .eq('status', 'active')
+            .eq('type', 'beta');
             
          if (codeError || !validCodes || validCodes.length === 0) {
-             throw new Error('Invalid or inactive invite code');
+             throw new Error('Invalid or inactive invite code (Beta code required)');
          }
       }
 
@@ -104,10 +105,11 @@ serve(async (req) => {
       if (invite_code) {
           // 调用 RPC 使用邀请码
           // 即使这里失败，用户也已注册成功，所以我们只记录错误不抛出，或者视业务需求而定
-          const { error: redeemError } = await supabase.rpc('redeem_global_invite_code', {
-             _user_id: userId,
+          const { error: redeemError } = await supabase.rpc('redeem_invite_code', {
+             _platform_user_id: platformUser.id,
              _code: invite_code,
-             _app_id: app_id
+             _app_id: app_id,
+             _required_type: 'beta'
           });
           
           if (redeemError) {
