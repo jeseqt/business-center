@@ -106,6 +106,17 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
     }
   }, [open]);
 
+  // Auto-switch away from Experience pack if already purchased
+  useEffect(() => {
+    if (hasPurchasedExperience && selectedProduct?.amount === 1 && products.length > 0) {
+        const nextProduct = products.find(p => p.amount !== 1);
+        if (nextProduct) {
+            setSelectedProduct(nextProduct);
+            setAmount(nextProduct.amount);
+        }
+    }
+  }, [hasPurchasedExperience, selectedProduct, products]);
+
   // Helper to calculate bonuses
   const getBonusInfo = (product: Product) => {
       const originalBonus = product.points - product.amount;
@@ -404,6 +415,8 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
                     正在创建订单...
                   </>
+                ) : (selectedProduct?.amount === 1 && hasPurchasedExperience) ? (
+                    '每人限购一次'
                 ) : (
                   selectedProduct?.button_text || '立即充值'
                 )}

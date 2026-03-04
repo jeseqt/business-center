@@ -225,6 +225,19 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
 
   }, [appId]);
 
+  // Auto-switch away from Experience pack if already purchased
+  useEffect(() => {
+      if (hasPurchasedExperience && selectedProduct?.amount === 1 && products.length > 0) {
+          // Find next available product (not amount 1)
+          // Prefer "Popular" or "Best Value" ones if possible, but simplest is just next one
+          const nextProduct = products.find(p => p.amount !== 1);
+          if (nextProduct) {
+              setSelectedProduct(nextProduct);
+              setAmount(nextProduct.amount);
+          }
+      }
+  }, [hasPurchasedExperience, selectedProduct, products]);
+
   const handleProductSelect = (product: Product) => {
     setSelectedProduct(product);
     setAmount(product.amount);
@@ -670,9 +683,10 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
           size="lg"
           className="w-full text-lg font-bold py-6 shadow-xl shadow-brand-500/20 hover:shadow-brand-500/40 hover:-translate-y-0.5 transition-all"
           onClick={handleRecharge}
-          isLoading={loading}
+          disabled={loading || (selectedProduct?.amount === 1 && hasPurchasedExperience)}
+          loading={loading}
         >
-          {loading ? '正在创建订单...' : `支付 $${amount} 立即充值`}
+          {loading ? '正在创建订单...' : (selectedProduct?.amount === 1 && hasPurchasedExperience) ? '每人限购一次' : `支付 $${amount} 立即充值`}
         </Button>
       </div>
 
