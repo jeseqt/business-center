@@ -44,9 +44,9 @@ export async function calculateRechargeBonuses(
         let bonus = Math.floor(basePoints * FIRST_RECHARGE_RATE);
         if (FRENZY_ACTIVE) {
             bonus = Math.floor(bonus * FRENZY_MULTIPLIER);
-            bonusDetails.push(`First Recharge Bonus (10% x ${FRENZY_MULTIPLIER} Frenzy): +${bonus}`);
+            bonusDetails.push(`首充奖励 (10% x ${FRENZY_MULTIPLIER} 倍狂欢): +${bonus}`);
         } else {
-            bonusDetails.push(`First Recharge Bonus (10%): +${bonus}`);
+            bonusDetails.push(`首充奖励 (10%): +${bonus}`);
         }
         totalBonus += bonus;
     }
@@ -80,9 +80,9 @@ export async function calculateRechargeBonuses(
             const totalNewBonus = bonusPerCompletion * newCompletions;
             
             if (FRENZY_ACTIVE) {
-                bonusDetails.push(`Cumulative Recharge Gift x${newCompletions} ($200 in 7d x ${FRENZY_MULTIPLIER} Frenzy): +${totalNewBonus}`);
+                bonusDetails.push(`累计充值奖励 x${newCompletions} (7日满$200 x ${FRENZY_MULTIPLIER} 倍狂欢): +${totalNewBonus}`);
             } else {
-                bonusDetails.push(`Cumulative Recharge Gift x${newCompletions} ($200 in 7d): +${totalNewBonus}`);
+                bonusDetails.push(`累计充值奖励 x${newCompletions} (7日满$200): +${totalNewBonus}`);
             }
             totalBonus += totalNewBonus;
         }
@@ -104,7 +104,7 @@ export async function calculateRechargeBonuses(
         const extraFrenzy = frenzyBaseBonus - originalBaseBonus;
         
         if (extraFrenzy > 0) {
-            bonusDetails.push(`Frenzy Multiplier on Base Bonus (+${originalBaseBonus} x ${FRENZY_MULTIPLIER}): +${extraFrenzy}`);
+            bonusDetails.push(`狂欢节基础赠送加成 (+${originalBaseBonus} x ${FRENZY_MULTIPLIER}): +${extraFrenzy}`);
             totalBonus += extraFrenzy;
         }
     }

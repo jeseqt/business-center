@@ -248,20 +248,25 @@ serve(async (req) => {
           }
           
           // 2. Credit Wallet
-          const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
-            _user_id: user.id, // Auth User ID
-            _amount: finalCreditAmount, // Use final amount
-            _type: 'deposit',
-            _app_id: app_id,
-            _order_id: order.id,
-            _description: `Mock Recharge: ${merchantOrderNo}`
-          });
+          // Split into Deposit and Reward for consistency with Webhook
 
-          if (rpcError) {
-            console.error('Mock wallet transaction failed:', rpcError);
-            // Note: In mock mode we might still want to redirect even if wallet fails, 
-            // or throw error. Let's log it.
+          // 2.1 Credit Base Points (Deposit)
+          if (finalCreditAmount > 0) {
+              const amountUSD = (amount / 100).toFixed(2);
+              const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
+                _user_id: user.id, // Auth User ID
+                _amount: finalCreditAmount, // Use final amount
+                _type: 'deposit',
+                _app_id: app_id,
+                _order_id: order.id,
+                _description: `Mock充值: $${amountUSD} (订单号: ${merchantOrderNo})`
+              });
+    
+              if (rpcError) {
+                console.error('Mock wallet transaction (deposit) failed:', rpcError);
+              }
           }
+
       } catch (bonusError: any) {
           console.error('Bonus calculation or wallet credit failed in Mock Mode:', bonusError);
           // Don't fail the entire request, just log it.

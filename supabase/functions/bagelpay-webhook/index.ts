@@ -350,37 +350,56 @@ serve(async (req) => {
     }
     // --- ACTIVITY LOGIC END ---
 
-    // Use explicit type casting if needed, but RPC now accepts text for user_id
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
-      _user_id: externalUserId,
-      _amount: finalCreditAmount, // Use calculated points with bonus
-      _type: 'deposit',
-      _app_id: order.app_id,
-      _order_id: order.id,
-      _description: `Recharge via BagelPay: ${order.merchant_order_no}`
-    });
+    // 1. Credit Base Points (Deposit)
+    if (basePoints > 0) {
+        const amountUSD = (order.amount / 100).toFixed(2);
+        const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
+          _user_id: externalUserId,
+          _amount: basePoints,
+          _type: 'deposit',
+          _app_id: order.app_id,
+          _order_id: order.id,
+          _description: `充值: $${amountUSD} (订单号: ${order.merchant_order_no})`
+        });
 
-    if (rpcError || (rpcResult && !rpcResult.success)) {
-      console.error('Wallet transaction failed:', rpcError || rpcResult);
-      // Order is paid, but wallet failed. This is critical.
-      // We return 500 to force BagelPay to retry the webhook later.
-      return new Response(JSON.stringify({ 
-        error: "Wallet transaction failed",
-        details: rpcError || rpcResult 
-      }), { status: 500 });
+        if (rpcError || (rpcResult && !rpcResult.success)) {
+          console.error('Wallet transaction (deposit) failed:', rpcError || rpcResult);
+          return new Response(JSON.stringify({ 
+            error: "Wallet transaction failed",
+            details: rpcError || rpcResult 
+          }), { status: 500 });
+        }
+        console.log(`Deposit processed. New Balance: ${rpcResult.new_balance}`);
     }
 
-    console.log(`Order ${orderNo} processed successfully. Wallet updated. New Balance: ${rpcResult.new_balance}`);
+    // 2. Credit Bonus Points (Reward)
+    if (totalBonus > 0) {
+        // Construct a detailed description for the bonus
+        // bonusDetails is an array of strings, join them
+        const bonusDesc = bonusDetails.length > 0 
+            ? `活动赠送: ${bonusDetails.join('; ')}`
+            : `充值赠送 (订单号: ${order.merchant_order_no})`;
 
-    // --- CUMULATIVE REWARD CHECK ---
-    try {
-        const { checkAndAwardCumulative } = await import("../_shared/cumulative-check.ts");
-        // Use order.platform_user_id (UUID)
-        await checkAndAwardCumulative(supabase, order.platform_user_id, order.app_id);
-    } catch (e) {
-        console.error('Cumulative check failed:', e);
+        const { data: bonusResult, error: bonusError } = await supabase.rpc('process_wallet_transaction', {
+            _user_id: externalUserId,
+            _amount: totalBonus,
+            _type: 'reward', // Use 'reward' type for bonuses
+            _app_id: order.app_id,
+            _order_id: order.id,
+            _description: bonusDesc
+        });
+
+        if (bonusError || (bonusResult && !bonusResult.success)) {
+            console.error('Wallet transaction (bonus) failed:', bonusError || bonusResult);
+            // We don't fail the whole webhook here if deposit succeeded, but we should log it clearly
+            // Ideally we should have a transaction block but RPC is separate.
+            // If deposit succeeded but bonus failed, user still got their money.
+        } else {
+            console.log(`Bonus processed. New Balance: ${bonusResult.new_balance}`);
+        }
     }
-    // --- CUMULATIVE REWARD END ---
+
+
 
     // --- INVITE REWARD CHECK ---
     try {

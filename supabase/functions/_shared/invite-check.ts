@@ -71,7 +71,7 @@ export async function checkAndAwardInvite(
         _amount: rewardPoints,
         _type: 'invite_reward',
         _app_id: appId,
-        _description: `Invite Reward from user ${authUserId} (Code: ${inviteCode})`
+        _description: `邀请奖励: 来自用户 ${authUserId} (邀请码: ${inviteCode})`
     });
 
     if (txError) {
