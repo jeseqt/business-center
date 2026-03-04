@@ -145,6 +145,24 @@ const { data: profile } = await supabase
   .single()
 ```
 
+#### 1.4 服务端托管注册 (Server-side Registration)
+
+对于需要服务端强校验（如必须验证邀请码才能注册）的场景，可以使用 `client-auth` 接口替代 Supabase SDK 的直接注册。
+
+- **接口地址**: `POST /functions/v1/client-auth`
+- **Headers**: `x-app-id: <APP_KEY>`
+- **Body**:
+  ```json
+  {
+    "action": "register",
+    "email": "user@example.com",
+    "password": "secure-password",
+    "invite_code": "REQUIRED_CODE", // 必填 (若 App 配置为强制邀请)
+    "account": "username"           // 可选
+  }
+  ```
+- **说明**: 该接口会自动完成 Supabase Auth 注册、`platform_users` 创建、钱包初始化及邀请码核销。
+
 ---
 
 ### 2. 业务用量上报 (Report Usage)
@@ -300,21 +318,47 @@ const signature = Hex.stringify(hmacSHA256(stringToSign, appSecret));
 
 #### 5.2 充值 (Recharge)
 
-创建充值订单，支持多种支付渠道。
+创建充值订单，支持 BagelPay 支付。
 
 *   **接口地址**: `POST /functions/v1/create-recharge-order`
 *   **权限**: 需携带 User Token
 *   **请求体 (Body)**:
     ```json
     {
-      "amount": 1000,       // 充值金额 (分)
-      "product_id": "prod_x", // (可选) 商品ID
-      "channel": "bagelpay"   // 支付渠道: bagelpay, wechat, alipay
+      "amount": 1000,           // 充值金额 (分)
+      "app_id": "UUID",         // App ID (必填)
+      "return_url": "https://...", // 支付成功后的跳转地址
+      "product_id": "prod_x"    // (可选) 商品ID
     }
     ```
+*   **Mock 模式**: 在开发环境 (无 `BAGELPAY_API_KEY`) 下，调用此接口会自动模拟支付成功，直接返回成功 URL 并增加余额。
 
 #### 5.3 邀请机制 (Invite System)
 
 *   **获取我的邀请码**: `GET /functions/v1/get-invite-code`
 *   **兑换邀请码**: `POST /functions/v1/redeem-invite`
-    *   **Body**: `{ "code": "ABC1234" }`
+    *   **Body**: `{ "code": "ABC1234", "app_id": "UUID" }`
+
+#### 5.4 应用配置 (App Config)
+
+获取应用的动态配置（如功能开关、UI 文案）。
+
+*   **接口地址**: `GET /functions/v1/fetch-config`
+*   **Headers**: `x-app-id: <APP_KEY>`
+*   **Query Params**:
+    *   `keys`: `key1,key2` (可选，指定获取的 Key)
+    *   `env`: `production` (默认)
+*   **Response**: `{ "success": true, "data": { "key1": "value1" } }`
+
+### 6. Webhook 集成指南
+
+#### 6.1 支付回调 (BagelPay Webhook)
+
+接收支付网关的异步通知。
+
+*   **接口地址**: `POST /functions/v1/bagelpay-webhook`
+*   **Headers**:
+    *   `bagelpay-signature`: 签名串
+    *   `timestamp`: 时间戳
+*   **Payload**: 包含 `data.order.status` ('paid'), `amount`, `request_id` 等字段。
+*   **签名验证**: 使用 HMAC-SHA256 算法和 `BAGELPAY_WEBHOOK_SECRET` 验证签名。
