@@ -57,16 +57,24 @@ export default function OrderManagement() {
       if (activeTab === 'orders') {
         query = supabase
             .from('platform_orders')
-            .select('*, platform_apps(name), platform_users(metadata)');
+            .select('*, platform_apps(name), platform_users(email, external_user_id, metadata)');
         
         if (statusFilter) query = query.eq('status', statusFilter);
         if (keyword) query = query.or(`platform_order_no.ilike.%${keyword}%,merchant_order_no.ilike.%${keyword}%`);
       } else {
         query = supabase
             .from('platform_wallet_transactions')
-            .select('*, platform_apps(name), platform_wallets(user_id)');
+            .select('*, platform_apps(name), platform_wallets(platform_users(email, external_user_id))');
             
-        if (statusFilter) query = query.eq('type', statusFilter);
+        if (statusFilter) {
+            query = query.eq('type', statusFilter);
+        } else {
+            // Default filter: only show usage/payment/admin, exclude deposits/rewards
+            // User explicitly requested "Redemption stats" (spending), so we filter by amount < 0
+            // This is more robust than type filtering if type is missing or inconsistent
+            query = query.lt('amount', 0);
+        }
+        
         // Note: transactions might not have searchable fields like order no easily accessible unless joined
         // Assuming description search or ID search
         if (keyword) query = query.ilike('description', `%${keyword}%`);
@@ -81,12 +89,24 @@ export default function OrderManagement() {
       if (error) throw error;
       
       // Transform relations
-      const formattedData = (resultData || []).map((item: any) => ({
-        ...item,
-        platform_apps: Array.isArray(item.platform_apps) ? item.platform_apps[0] : item.platform_apps,
-        platform_users: item.platform_users ? (Array.isArray(item.platform_users) ? item.platform_users[0] : item.platform_users) : undefined,
-        platform_wallets: item.platform_wallets ? (Array.isArray(item.platform_wallets) ? item.platform_wallets[0] : item.platform_wallets) : undefined
-      }));
+      const formattedData = (resultData || []).map((item: any) => {
+        const app = Array.isArray(item.platform_apps) ? item.platform_apps[0] : item.platform_apps;
+        let user = item.platform_users ? (Array.isArray(item.platform_users) ? item.platform_users[0] : item.platform_users) : undefined;
+        
+        // For transactions, get user from wallet relation
+        if (!user && item.platform_wallets) {
+          const wallet = Array.isArray(item.platform_wallets) ? item.platform_wallets[0] : item.platform_wallets;
+          if (wallet?.platform_users) {
+            user = Array.isArray(wallet.platform_users) ? wallet.platform_users[0] : wallet.platform_users;
+          }
+        }
+
+        return {
+          ...item,
+          platform_apps: app,
+          platform_users: user,
+        };
+      });
 
       setData(formattedData);
     } catch (err) {
@@ -100,7 +120,38 @@ export default function OrderManagement() {
   useEffect(() => { loadData(); }, [activeTab, page, selectedAppId, statusFilter]);
   useEffect(() => { loadStats(); }, [selectedAppId]);
 
+  const formatDescription = (description: string) => {
+    if (!description) return '-';
+    let desc = description;
+    desc = desc.replace('Recharge via BagelPay', 'BagelPay充值');
+    desc = desc.replace('Recharge Bonus', '充值奖励');
+    desc = desc.replace('Mock Recharge', '模拟充值');
+    desc = desc.replace('deposit', '充值');
+    desc = desc.replace('reward', '赠送');
+    desc = desc.replace('Usage', '使用');
+    desc = desc.replace('Payment', '支付');
+    desc = desc.replace('Refund', '退款');
+    return desc;
+  };
+
   const getStatusBadge = (status: string) => {
+    const statusMap: Record<string, string> = {
+      paid: '已支付',
+      pending: '待支付',
+      failed: '失败',
+      refunded: '已退款',
+      deposit: '充值',
+      usage: '消费',
+      payment: '消费',
+      admin: '管理员调整',
+      reward: '活动赠送',
+      cumulative_reward: '累计充值奖励',
+      invite_reward: '邀请奖励',
+      refund: '退款',
+      admin_adjustment: '管理员调整'
+    };
+    const label = statusMap[status] || status || '-';
+
     const colors: Record<string, any> = {
       paid: 'success',
       pending: 'warning',
@@ -108,9 +159,13 @@ export default function OrderManagement() {
       refunded: 'warning',
       deposit: 'success',
       payment: 'warning',
-      admin: 'info'
+      admin: 'info',
+      reward: 'success',
+      usage: 'warning',
+      invite_reward: 'success',
+      cumulative_reward: 'success'
     };
-    return <Badge variant={colors[status] || 'default'}>{status}</Badge>;
+    return <Badge variant={colors[status] || 'default'}>{label}</Badge>;
   };
 
   return (
@@ -182,7 +237,6 @@ export default function OrderManagement() {
               onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             >
               <option value="">所有类型</option>
-              <option value="deposit">充值</option>
               <option value="payment">支付/消费</option>
               <option value="admin">系统调整</option>
             </select>
@@ -209,17 +263,20 @@ export default function OrderManagement() {
             <thead className="bg-gray-50">
               {activeTab === 'orders' ? (
                 <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">充值账号</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">订单号</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">应用</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">充值金额</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">获得积分</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">状态</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">时间</th>
                 </tr>
               ) : (
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">类型</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">账号</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">应用</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">金额变动</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">积分变动</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">描述</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden lg:table-cell">时间</th>
                 </tr>
@@ -227,34 +284,47 @@ export default function OrderManagement() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
-                <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-500">加载中...</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-500">加载中...</td></tr>
               ) : data.length === 0 ? (
-                <tr><td colSpan={5} className="px-6 py-10 text-center text-gray-500">暂无数据</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-gray-500">暂无数据</td></tr>
               ) : (
                 data.map((item) => (
                   <tr key={item.id} className="hover:bg-gray-50 text-sm">
                     {activeTab === 'orders' ? (
                       <>
                         <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900">{item.platform_users?.email || item.platform_users?.external_user_id || '-'}</div>
+                        </td>
+                        <td className="px-6 py-4">
                           <div className="font-medium text-gray-900">{item.platform_order_no}</div>
                           <div className="text-xs text-gray-500">{item.merchant_order_no}</div>
                         </td>
                         <td className="px-6 py-4 hidden md:table-cell">{item.platform_apps?.name}</td>
-                        <td className="px-6 py-4">{(item.amount / 100).toFixed(2)} {item.currency}</td>
+                        <td className="px-6 py-4">{(item.amount / 100).toFixed(2)} {item.currency === 'USD' ? '美元' : item.currency}</td>
+                        <td className="px-6 py-4 font-medium text-blue-600">
+                          {((item.metadata?.points || Math.floor(item.amount / 100)) + (item.metadata?.bonus_points || 0))} 
+                          {item.metadata?.bonus_points ? <span className="text-xs text-gray-500 ml-1">(含赠送 {item.metadata.bonus_points})</span> : ''}
+                        </td>
                         <td className="px-6 py-4">{getStatusBadge(item.status)}</td>
                         <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">{new Date(item.created_at).toLocaleString()}</td>
                       </>
                     ) : (
                       <>
-                        <td className="px-6 py-4 font-medium">{getStatusBadge(item.type)}</td>
-                        <td className="px-6 py-4 hidden md:table-cell">{item.platform_apps?.name || '-'}</td>
-                        <td className="px-6 py-4">
-                          <span className={item.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
-                            {item.amount >= 0 ? '+' : ''}{(item.amount / 100).toFixed(2)}
-                          </span>
-                          <div className="text-xs text-gray-400">余额: {(item.balance_after / 100).toFixed(2)}</div>
+                        <td className="px-6 py-4 font-medium">
+                          {getStatusBadge(item.type)}
+                          <span className="text-xs text-gray-400 ml-1">({item.type})</span>
                         </td>
-                        <td className="px-6 py-4 text-gray-600">{item.description}</td>
+                        <td className="px-6 py-4">
+                          <div className="font-medium text-gray-900">{item.platform_users?.email || item.platform_users?.external_user_id || '-'}</div>
+                        </td>
+                        <td className="px-6 py-4 hidden md:table-cell">{item.platform_apps?.name || '-'}</td>
+                        <td className="px-6 py-4 font-medium">
+                          <div className={item.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                            {item.amount >= 0 ? '+' : ''}{item.amount}
+                          </div>
+                          <div className="text-xs text-gray-400">余额: {item.balance_after ?? 0}</div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-600">{formatDescription(item.description || item.type)}</td>
                         <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">{new Date(item.created_at).toLocaleString()}</td>
                       </>
                     )}

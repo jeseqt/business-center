@@ -351,6 +351,7 @@ serve(async (req) => {
     // --- ACTIVITY LOGIC END ---
 
     // 1. Credit Base Points (Deposit)
+    let depositResult = null;
     if (basePoints > 0) {
         const amountUSD = (order.amount / 100).toFixed(2);
         const { data: rpcResult, error: rpcError } = await supabase.rpc('process_wallet_transaction', {
@@ -369,6 +370,7 @@ serve(async (req) => {
             details: rpcError || rpcResult 
           }), { status: 500 });
         }
+        depositResult = rpcResult;
         console.log(`Deposit processed. New Balance: ${rpcResult.new_balance}`);
     }
 
@@ -419,7 +421,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
         success: true, 
         message: "Wallet credited successfully",
-        new_balance: rpcResult.new_balance,
+        new_balance: depositResult ? depositResult.new_balance : 0,
         credited_to_user_id: externalUserId,
         order_amount: order.amount,
         transaction_description: `Recharge via BagelPay: ${order.merchant_order_no}`
