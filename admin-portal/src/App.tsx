@@ -130,8 +130,8 @@ function App() {
         .from('platform_admin_profiles')
         .select('role')
         .eq('id', userId)
-        .maybeSingle()
-        .abortSignal(controller.signal);
+        .maybeSingle();
+        // .abortSignal(controller.signal);
       
       clearTimeout(timeoutId as any);
 

@@ -263,7 +263,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
       
       // Use Anon Key for Authorization header to pass Gateway verification,
       // and pass the actual user token in a custom header to bypass Gateway's strict user token check.
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || supabase.supabaseKey;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       const returnUrl = `${window.location.origin}/dashboard/wallet?status=success`;
       
