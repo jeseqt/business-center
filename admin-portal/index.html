@@ -8,6 +8,14 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <title>APP业务中台管理系统</title>
+    <script>
+      console.log('Index.html loaded successfully. Timestamp:', new Date().toISOString());
+      window.onerror = function(msg, url, line, col, error) {
+        console.error('Global Error detected:', msg, error);
+        document.body.innerHTML += '<div style="color:red;padding:10px;border:1px solid red;margin:10px;">Global Error: ' + msg + '</div>';
+        return false;
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

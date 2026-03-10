@@ -4,16 +4,15 @@ import path from 'path'
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: '/',
   plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  server: {
-    host: '0.0.0.0',
-    hmr: {
-      host: '127.0.0.1',
-    },
+  build: {
+    outDir: 'dist',
+    sourcemap: true, // 开启 sourcemap 方便调试
   },
 })
