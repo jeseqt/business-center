@@ -13,6 +13,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true, // 开启 sourcemap 方便调试
+    sourcemap: true,
+    minify: false, // 关闭压缩，方便查看生成的代码
+    emptyOutDir: true,
   },
 })
