@@ -23,6 +23,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
         <div style={{ padding: '20px', fontFamily: 'monospace' }}>
           <h1>Something went wrong.</h1>
           <pre style={{ color: 'red' }}>{this.state.error?.toString()}</pre>
+          <pre style={{ color: '#666', fontSize: '12px' }}>{this.state.error?.stack}</pre>
           <button onClick={() => window.location.reload()} style={{ padding: '8px 16px', marginTop: '10px' }}>
             Reload Page
           </button>
@@ -34,10 +35,20 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>,
-)
+console.log('App starting...');
+try {
+  const root = document.getElementById('root');
+  if (!root) throw new Error('Root element not found');
+  
+  ReactDOM.createRoot(root).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  )
+  console.log('App mounted successfully');
+} catch (e) {
+  console.error('Failed to mount app:', e);
+  document.body.innerHTML = `<div style="color:red;padding:20px"><h1>Fatal Error</h1><pre>${e}</pre></div>`;
+}
