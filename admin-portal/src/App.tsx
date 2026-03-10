@@ -26,6 +26,11 @@ function App() {
   const [holdForAdmin, setHoldForAdmin] = useState<boolean>(cachedAdmin === 'true');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
 
+  // Debug overlay
+  if (typeof window !== 'undefined') {
+    (window as any).__APP_STATE__ = { session, loading, isAdmin, isSupabaseConfigured };
+  }
+
   // 如果未配置环境变量，显示提示页面
   if (!isSupabaseConfigured) {
      // ... (keep existing code)
@@ -177,12 +182,20 @@ function App() {
         <div className="text-xs text-gray-400 max-w-xs text-center">
           如果长时间卡住，请尝试刷新页面或清除浏览器缓存
         </div>
+        <div className="fixed bottom-0 left-0 w-full bg-black/80 text-white text-xs p-2 font-mono">
+          DEBUG: Env Configured: {isSupabaseConfigured ? 'Yes' : 'No'} | 
+          Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing'}
+        </div>
       </div>
     );
   }
 
   return (
-    <BrowserRouter>
+    <>
+      <div className="fixed top-0 left-0 bg-yellow-300 text-black text-xs px-2 py-1 z-50 pointer-events-none opacity-50">
+        V1.1 Loaded | Sess: {session ? 'Yes' : 'No'} | Admin: {String(isAdmin)}
+      </div>
+      <BrowserRouter>
       <Routes>
         <Route path="/" element={
           !session ? <Login /> : (
@@ -224,6 +237,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
+    </>
   );
 }
 
