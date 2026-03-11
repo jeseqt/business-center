@@ -205,18 +205,37 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
         }
 
         // Check Recent Recharge Total (Last 7 days)
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        
-        const { data: recentOrders, error: recentError } = await supabase
-            .from('platform_orders')
-            .select('amount')
-            .eq('status', 'paid')
-            .gte('created_at', sevenDaysAgo.toISOString());
+        // Try to use RPC first (bypasses RLS issues), fallback to direct query if RPC fails
+        try {
+            const { data: stats, error: rpcError } = await supabase.rpc('get_user_recharge_stats', {
+                _app_id: appId
+            });
 
-        if (recentOrders) {
-            const total = recentOrders.reduce((sum, order) => sum + order.amount, 0);
-            setRecentRechargeTotal(total / 100);
+            if (!rpcError && stats) {
+                // Use RPC result directly
+                // stats.recent_amount is in cents
+                const recentAmount = Number(stats.recent_amount || 0);
+                setRecentRechargeTotal(recentAmount / 100);
+            } else {
+                throw rpcError || new Error('RPC returned null');
+            }
+        } catch (err) {
+            console.warn('RPC fetch failed, falling back to direct query:', err);
+            
+            // Fallback: Direct Query (subject to RLS)
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            
+            const { data: recentOrders, error: recentError } = await supabase
+                .from('platform_orders')
+                .select('amount')
+                .eq('status', 'paid')
+                .gte('created_at', sevenDaysAgo.toISOString());
+
+            if (recentOrders) {
+                const total = recentOrders.reduce((sum, order) => sum + order.amount, 0);
+                setRecentRechargeTotal(total / 100);
+            }
         }
     };
 
