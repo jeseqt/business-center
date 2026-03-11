@@ -176,14 +176,12 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 space-y-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <div className="text-gray-500 text-sm font-medium">{debugStatus}</div>
-        <div className="text-xs text-gray-400 max-w-xs text-center">
-          如果长时间卡住，请尝试刷新页面或清除浏览器缓存
-        </div>
-        <div className="fixed bottom-0 left-0 w-full bg-black/80 text-white text-xs p-2 font-mono">
-          DEBUG: Env Configured: {isSupabaseConfigured ? 'Yes' : 'No'} | 
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', padding: '20px', background: '#f8fafc', color: '#334155' }}>
+        <div style={{ fontSize: '24px', marginBottom: '20px' }}>Loading...</div>
+        <div style={{ fontSize: '14px', fontFamily: 'monospace' }}>{debugStatus}</div>
+        <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', padding: '10px', background: 'rgba(0,0,0,0.8)', color: 'white', fontFamily: 'monospace', fontSize: '12px', zIndex: 99999 }}>
+          DEBUG (Inline Styles): 
+          Env Configured: {isSupabaseConfigured ? 'Yes' : 'No'} | 
           Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing'}
         </div>
       </div>
@@ -192,7 +190,7 @@ function App() {
 
   return (
     <>
-      <div className="fixed top-0 left-0 bg-yellow-300 text-black text-xs px-2 py-1 z-50 pointer-events-none opacity-50">
+      <div style={{ position: 'fixed', top: 0, left: 0, padding: '5px', background: 'yellow', color: 'black', fontSize: '12px', zIndex: 99999, opacity: 0.8 }}>
         V1.1 Loaded | Sess: {session ? 'Yes' : 'No'} | Admin: {String(isAdmin)}
       </div>
       <BrowserRouter>
