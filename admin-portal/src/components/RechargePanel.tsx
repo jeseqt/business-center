@@ -204,7 +204,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
             setHasPurchasedExperience(true);
         }
 
-        // Check Recent Recharge Total (Last 7 days)
+        // Check Cumulative Recharge Total (All time)
         // Try to use RPC first (bypasses RLS issues), fallback to direct query if RPC fails
         try {
             const { data: stats, error: rpcError } = await supabase.rpc('get_user_recharge_stats', {
@@ -213,9 +213,9 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
 
             if (!rpcError && stats) {
                 // Use RPC result directly
-                // stats.recent_amount is in cents
-                const recentAmount = Number(stats.recent_amount || 0);
-                setRecentRechargeTotal(recentAmount / 100);
+                // stats.total_amount is in cents (All time total)
+                const totalAmount = Number(stats.total_amount || 0);
+                setRecentRechargeTotal(totalAmount / 100);
             } else {
                 throw rpcError || new Error('RPC returned null');
             }
@@ -223,17 +223,14 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
             console.warn('RPC fetch failed, falling back to direct query:', err);
             
             // Fallback: Direct Query (subject to RLS)
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            
-            const { data: recentOrders, error: recentError } = await supabase
+            // Query ALL paid orders (no time limit)
+            const { data: allOrders, error: recentError } = await supabase
                 .from('platform_orders')
                 .select('amount')
-                .eq('status', 'paid')
-                .gte('created_at', sevenDaysAgo.toISOString());
+                .eq('status', 'paid');
 
-            if (recentOrders) {
-                const total = recentOrders.reduce((sum, order) => sum + order.amount, 0);
+            if (allOrders) {
+                const total = allOrders.reduce((sum, order) => sum + order.amount, 0);
                 setRecentRechargeTotal(total / 100);
             }
         }
