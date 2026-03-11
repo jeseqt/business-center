@@ -7,43 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <title>APP业务中台管理系统 - Debug V2 (NPM)</title>
-    <script>
-      // Polyfill process for libraries that expect it
-      window.process = { env: { NODE_ENV: 'production' } };
-      
-      console.log('Index.html loaded successfully. V2 - NPM Forced');
-      
-      window.onerror = function(msg, url, line, col, error) {
-        console.error('Global Error detected:', msg, error);
-        var errDiv = document.createElement('div');
-        errDiv.style.cssText = 'position:fixed;top:0;left:0;width:100%;background:red;color:white;padding:20px;z-index:9999;';
-        errDiv.innerHTML = '<h3>Global Error Detected</h3><pre>' + msg + '</pre>';
-        document.body.appendChild(errDiv);
-        return false;
-      };
-
-      window.addEventListener('unhandledrejection', function(event) {
-        console.error('Unhandled Rejection:', event.reason);
-        var errDiv = document.createElement('div');
-        errDiv.style.cssText = 'position:fixed;bottom:0;right:0;max-width:300px;background:orange;color:black;padding:10px;z-index:9999;border:2px solid black;';
-        errDiv.innerHTML = '<b>Unhandled Rejection:</b><br>' + event.reason;
-        document.body.appendChild(errDiv);
-      });
-
-      // Mount Timeout Detector
-      setTimeout(function() {
-        var root = document.getElementById('root');
-        if (root && root.innerHTML.indexOf('Loading...') !== -1 && root.innerHTML.indexOf('系统加载中') !== -1) {
-          // Still showing the initial HTML
-          console.error('React Mount Timeout: Root content unchanged after 5s');
-          var warning = document.createElement('div');
-          warning.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:white;border:5px solid red;padding:20px;z-index:10000;text-align:center;color:red;font-weight:bold;';
-          warning.innerHTML = '<h1>REACT MOUNT TIMEOUT</h1><p>React failed to take over the page within 5 seconds.</p><p>Check Console (F12) for errors.</p>';
-          document.body.appendChild(warning);
-        }
-      }, 5000);
-    </script>
+    <title>APP业务中台管理系统</title>
   </head>
   <body>
     <div id="root"></div>

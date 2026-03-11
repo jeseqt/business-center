@@ -26,11 +26,6 @@ function App() {
   const [holdForAdmin, setHoldForAdmin] = useState<boolean>(cachedAdmin === 'true');
   const [debugStatus, setDebugStatus] = useState<string>('Initializing...');
 
-  // Debug overlay
-  if (typeof window !== 'undefined') {
-    (window as any).__APP_STATE__ = { session, loading, isAdmin, isSupabaseConfigured };
-  }
-
   // 如果未配置环境变量，显示提示页面
   if (!isSupabaseConfigured) {
      // ... (keep existing code)
@@ -176,24 +171,18 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', padding: '20px', background: '#f8fafc', color: '#334155' }}>
-        <div style={{ fontSize: '24px', marginBottom: '20px' }}>Loading...</div>
-        <div style={{ fontSize: '14px', fontFamily: 'monospace' }}>{debugStatus}</div>
-        <div style={{ position: 'fixed', bottom: 0, left: 0, width: '100%', padding: '10px', background: 'rgba(0,0,0,0.8)', color: 'white', fontFamily: 'monospace', fontSize: '12px', zIndex: 99999 }}>
-          DEBUG (Inline Styles): 
-          Env Configured: {isSupabaseConfigured ? 'Yes' : 'No'} | 
-          Supabase URL: {import.meta.env.VITE_SUPABASE_URL ? 'Set' : 'Missing'}
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 space-y-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="text-gray-500 text-sm font-medium">{debugStatus}</div>
+        <div className="text-xs text-gray-400 max-w-xs text-center">
+          如果长时间卡住，请尝试刷新页面或清除浏览器缓存
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      <div style={{ position: 'fixed', top: 0, left: 0, padding: '5px', background: 'yellow', color: 'black', fontSize: '12px', zIndex: 99999, opacity: 0.8 }}>
-        V1.1 Loaded | Sess: {session ? 'Yes' : 'No'} | Admin: {String(isAdmin)}
-      </div>
-      <BrowserRouter>
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={
           !session ? <Login /> : (
@@ -235,7 +224,6 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
-    </>
   );
 }
 
