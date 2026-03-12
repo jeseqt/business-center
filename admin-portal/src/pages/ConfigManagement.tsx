@@ -6,7 +6,9 @@ import { Modal } from '../components/Modal';
 import { Badge } from '../components/Badge';
 import { PageHeader } from '../components/PageHeader';
 import { Card } from '../components/Card';
-import { Plus, Edit2, Trash2, Settings } from 'lucide-react';
+import { Plus, Edit2, Trash2, Settings, Send, Save, X } from 'lucide-react';
+
+// --- Types ---
 
 interface AppData {
   id: string;
@@ -24,6 +26,213 @@ interface ConfigItem {
   updated_at: string;
 }
 
+interface ModelPricing {
+  input: number;
+  output: number;
+}
+
+interface PointsPricingConfig {
+  point_value_usd: number;
+  markup_multiplier: number;
+  rmb_to_usd: number;
+  model_pricing_rmb: Record<string, ModelPricing>;
+}
+
+// --- Constants ---
+
+const DEFAULT_POINTS_PRICING: PointsPricingConfig = {
+  point_value_usd: 0.0074,
+  markup_multiplier: 10,
+  rmb_to_usd: 7.25,
+  model_pricing_rmb: {
+    "qwen-turbo": { "input": 0.0003, "output": 0.0006 },
+    "qwen-plus": { "input": 0.0008, "output": 0.002 },
+    "qwen-max": { "input": 0.004, "output": 0.012 },
+    "text-embedding-v3": { "input": 0.0001, "output": 0 }
+  }
+};
+
+const PREDEFINED_KEYS = [
+  { key: 'points_pricing', label: '积分扣减规则 (Points Pricing)' },
+  { key: 'custom', label: '自定义配置 (Custom)' }
+];
+
+// --- Sub-components ---
+
+const PointsPricingEditor = ({ 
+  value, 
+  onChange 
+}: { 
+  value: string; 
+  onChange: (newValue: string) => void;
+}) => {
+  const [config, setConfig] = useState<PointsPricingConfig>(() => {
+    try {
+      return value ? JSON.parse(value) : DEFAULT_POINTS_PRICING;
+    } catch {
+      return DEFAULT_POINTS_PRICING;
+    }
+  });
+
+  // Convert map to array for easier editing
+  const [models, setModels] = useState<{name: string, input: number, output: number}[]>(() => {
+    return Object.entries(config.model_pricing_rmb || {}).map(([k, v]) => ({
+      name: k,
+      input: v.input,
+      output: v.output
+    }));
+  });
+
+  // Update parent whenever local state changes
+  useEffect(() => {
+    const newConfig = {
+      ...config,
+      model_pricing_rmb: models.reduce((acc, curr) => {
+        if (curr.name) {
+          acc[curr.name] = { input: curr.input, output: curr.output };
+        }
+        return acc;
+      }, {} as Record<string, ModelPricing>)
+    };
+    onChange(JSON.stringify(newConfig, null, 2));
+  }, [config.point_value_usd, config.markup_multiplier, config.rmb_to_usd, models]);
+
+  const handleModelChange = (index: number, field: 'name' | 'input' | 'output', val: string | number) => {
+    const newModels = [...models];
+    // @ts-ignore
+    newModels[index][field] = val;
+    setModels(newModels);
+  };
+
+  const addModel = () => {
+    setModels([...models, { name: '', input: 0, output: 0 }]);
+  };
+
+  const removeModel = (index: number) => {
+    setModels(models.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">单积分价值 (USD)</label>
+          <div className="relative rounded-md shadow-sm">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <span className="text-gray-500 sm:text-sm">$</span>
+            </div>
+            <input
+              type="number"
+              step="0.0001"
+              className="block w-full rounded-md border-gray-300 pl-7 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
+              value={config.point_value_usd}
+              onChange={e => setConfig({...config, point_value_usd: parseFloat(e.target.value)})}
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">例如: 0.0074 (1积分 ≈ $0.0074)</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">利润倍数 (Markup)</label>
+          <input
+            type="number"
+            step="0.1"
+            className="block w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
+            value={config.markup_multiplier}
+            onChange={e => setConfig({...config, markup_multiplier: parseFloat(e.target.value)})}
+          />
+           <p className="mt-1 text-xs text-gray-500">基础成本 x 倍数 = 最终扣分</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">汇率 (RMB/USD)</label>
+          <div className="relative rounded-md shadow-sm">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <span className="text-gray-500 sm:text-sm">¥</span>
+            </div>
+            <input
+              type="number"
+              step="0.01"
+              className="block w-full rounded-md border-gray-300 pl-7 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2 border"
+              value={config.rmb_to_usd}
+              onChange={e => setConfig({...config, rmb_to_usd: parseFloat(e.target.value)})}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-200 pt-4">
+        <div className="flex justify-between items-center mb-3">
+          <label className="block text-sm font-medium text-gray-900">模型定价 (RMB / 1k Tokens)</label>
+          <Button size="sm" onClick={addModel} type="button" className="gap-1">
+            <Plus className="h-3 w-3" /> 添加模型
+          </Button>
+        </div>
+        
+        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white">
+          <table className="min-w-full divide-y divide-gray-300">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="py-2 pl-4 pr-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">模型标识 (Model Key)</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">输入价格 (Input)</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">输出价格 (Output)</th>
+                <th className="relative py-2 pl-3 pr-4 sm:pr-6"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {models.map((model, idx) => (
+                <tr key={idx}>
+                  <td className="whitespace-nowrap py-2 pl-4 pr-3 text-sm">
+                    <input 
+                      type="text" 
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs border p-1"
+                      placeholder="e.g. gpt-4"
+                      value={model.name}
+                      onChange={e => handleModelChange(idx, 'name', e.target.value)}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-500">
+                    <input 
+                      type="number" 
+                      step="0.0001"
+                      className="block w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs border p-1"
+                      value={model.input}
+                      onChange={e => handleModelChange(idx, 'input', parseFloat(e.target.value))}
+                    />
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-sm text-gray-500">
+                    <input 
+                      type="number" 
+                      step="0.0001"
+                      className="block w-24 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-xs border p-1"
+                      value={model.output}
+                      onChange={e => handleModelChange(idx, 'output', parseFloat(e.target.value))}
+                    />
+                  </td>
+                  <td className="relative whitespace-nowrap py-2 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                    <button
+                      type="button"
+                      onClick={() => removeModel(idx)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {models.length === 0 && (
+            <div className="p-4 text-center text-sm text-gray-500">暂无模型定价，请添加</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main Component ---
+
 export default function ConfigManagement() {
   const [apps, setApps] = useState<AppData[]>([]);
   const [selectedAppId, setSelectedAppId] = useState<string>('');
@@ -39,6 +248,10 @@ export default function ConfigManagement() {
     description: '',
     is_active: true
   });
+  
+  // UI State
+  const [keySelection, setKeySelection] = useState('custom'); // 'points_pricing' | 'custom'
+  const [pushOnSave, setPushOnSave] = useState(false);
 
   useEffect(() => {
     loadApps();
@@ -110,6 +323,26 @@ export default function ConfigManagement() {
 
       if (error) throw error;
 
+      if (pushOnSave) {
+        try {
+          const { data: pushData, error: pushError } = await supabase.functions.invoke('admin-push-config', {
+            body: {
+              app_id: selectedAppId,
+              config_key: payload.config_key,
+              config_value: payload.config_value
+            }
+          });
+          
+          if (pushError || (pushData && pushData.error)) {
+             console.error('Push failed after save:', pushError || pushData.error);
+             alert('配置保存成功，但自动推送失败。请手动尝试推送。');
+          }
+        } catch (pushErr) {
+           console.error('Push exception:', pushErr);
+           alert('配置保存成功，但自动推送异常。');
+        }
+      }
+
       setIsModalOpen(false);
       loadConfigs(selectedAppId);
       resetForm();
@@ -122,6 +355,28 @@ export default function ConfigManagement() {
     if (!confirm('确认删除此配置项吗？')) return;
     const { error } = await supabase.from('platform_app_configs').delete().eq('id', id);
     if (!error) loadConfigs(selectedAppId);
+  };
+
+  const handlePush = async (config: ConfigItem) => {
+    if (!confirm(`确认要将配置 "${config.config_key}" 推送到业务系统吗？`)) return;
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('admin-push-config', {
+        body: {
+          app_id: config.app_id,
+          config_key: config.config_key,
+          config_value: config.config_value
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      alert('推送成功');
+    } catch (err: any) {
+      console.error('Push error:', err);
+      alert('推送失败: ' + (err.message || '未知错误'));
+    }
   };
 
   const toggleStatus = async (config: ConfigItem) => {
@@ -141,6 +396,30 @@ export default function ConfigManagement() {
       description: '',
       is_active: true
     });
+    setKeySelection('custom');
+    setPushOnSave(false);
+  };
+
+  const handleKeySelectionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selection = e.target.value;
+    setKeySelection(selection);
+    
+    if (selection === 'points_pricing') {
+      setFormData(prev => ({
+        ...prev,
+        config_key: 'points_pricing',
+        // Auto-fill template if empty or if switching from custom
+        config_value: prev.config_value || JSON.stringify(DEFAULT_POINTS_PRICING, null, 2)
+      }));
+      setPushOnSave(true);
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        config_key: '',
+        config_value: ''
+      }));
+      setPushOnSave(false);
+    }
   };
 
   const openCreateModal = () => {
@@ -150,6 +429,12 @@ export default function ConfigManagement() {
 
   const openEditModal = (config: ConfigItem) => {
     setEditingConfig(config);
+    
+    // Determine key selection type
+    const isPointsPricing = config.config_key === 'points_pricing';
+    setKeySelection(isPointsPricing ? 'points_pricing' : 'custom');
+    setPushOnSave(isPointsPricing);
+
     setFormData({
       config_key: config.config_key,
       config_value: JSON.stringify(config.config_value, null, 2),
@@ -247,6 +532,17 @@ export default function ConfigManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
+                        {config.config_key === 'points_pricing' && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handlePush(config)}
+                            title="推送到业务系统"
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => openEditModal(config)}>
                           <Edit2 className="h-4 w-4 text-gray-500" />
                         </Button>
@@ -268,29 +564,65 @@ export default function ConfigManagement() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={editingConfig ? "编辑配置" : "新建配置"}
+        footer={
+          <div className="flex justify-end gap-3 w-full">
+            <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>取消</Button>
+            <Button type="submit" form="config-form" className="gap-2">
+              <Save className="h-4 w-4" /> 保存配置
+            </Button>
+          </div>
+        }
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form id="config-form" onSubmit={handleSubmit} className="space-y-4">
+          
+          {/* Config Key Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700">配置键 (Key)</label>
-            <Input
-              value={formData.config_key}
-              onChange={(e) => setFormData({...formData, config_key: e.target.value})}
-              placeholder="例如：welcome_message"
-              required
-              disabled={!!editingConfig} // Key is immutable for simplicity
-            />
+            <div className="mt-1 flex gap-2">
+              <select
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"
+                value={keySelection}
+                onChange={handleKeySelectionChange}
+                disabled={!!editingConfig} // Immutable on edit
+              >
+                {PREDEFINED_KEYS.map(opt => (
+                  <option key={opt.key} value={opt.key}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            
+            {keySelection === 'custom' && (
+              <div className="mt-2">
+                 <Input
+                  value={formData.config_key}
+                  onChange={(e) => setFormData({...formData, config_key: e.target.value})}
+                  placeholder="输入自定义 Key (如: welcome_message)"
+                  required
+                  disabled={!!editingConfig}
+                />
+              </div>
+            )}
             <p className="mt-1 text-xs text-gray-500">唯一标识符，创建后不可修改</p>
           </div>
 
+          {/* Dynamic Config Value Editor */}
           <div>
-            <label className="block text-sm font-medium text-gray-700">配置值 (支持 JSON)</label>
-            <textarea
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2 h-32 font-mono"
-              value={formData.config_value}
-              onChange={(e) => setFormData({...formData, config_value: e.target.value})}
-              placeholder='{"text": "你好", "color": "red"} 或 "true"'
-              required
-            />
+            <label className="block text-sm font-medium text-gray-700 mb-2">配置内容</label>
+            
+            {keySelection === 'points_pricing' ? (
+              <PointsPricingEditor 
+                value={formData.config_value}
+                onChange={(newValue) => setFormData({...formData, config_value: newValue})}
+              />
+            ) : (
+              <textarea
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2 h-32 font-mono"
+                value={formData.config_value}
+                onChange={(e) => setFormData({...formData, config_value: e.target.value})}
+                placeholder='{"text": "你好", "color": "red"} 或 "true"'
+                required
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -307,15 +639,28 @@ export default function ConfigManagement() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">状态</label>
-              <div className="mt-2 flex items-center">
-                <input
-                  type="checkbox"
-                  checked={formData.is_active}
-                  onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
-                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-600">启用</span>
+              <label className="block text-sm font-medium text-gray-700">状态 & 选项</label>
+              <div className="mt-2 space-y-2">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({...formData, is_active: e.target.checked})}
+                    className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <span className="ml-2 text-sm text-gray-600">启用配置</span>
+                </div>
+                {keySelection === 'points_pricing' && (
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={pushOnSave}
+                      onChange={(e) => setPushOnSave(e.target.checked)}
+                      className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                    />
+                    <span className="ml-2 text-sm text-gray-600 font-medium text-blue-600">保存后自动推送到业务系统</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -327,11 +672,6 @@ export default function ConfigManagement() {
               onChange={(e) => setFormData({...formData, description: e.target.value})}
               placeholder="用途说明"
             />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
-            <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>取消</Button>
-            <Button type="submit">保存配置</Button>
           </div>
         </form>
       </Modal>
