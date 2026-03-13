@@ -1,7 +1,13 @@
 
-import { serve } from "std/http/server.ts";
-import { createClient } from "@supabase/supabase-js";
-import { corsHeaders } from "../_shared/cors.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// Define corsHeaders inline to avoid relative import issues in some deployment environments
+export const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-user-token, x-app-id, x-timestamp, x-sign, x-client-token',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+};
 
 console.log("Hello from admin-push-config!");
 

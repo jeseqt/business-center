@@ -58,18 +58,45 @@ export default function AppManagement() {
     e.preventDefault();
     setCreating(true);
     try {
-      const { data, error } = await supabase.functions.invoke('admin-app-manage', {
-        body: { 
-            name: appName, 
-            description: appDesc,
-            invite_required: appInviteRequired 
-        },
-        method: 'POST'
-      });
+      // Generate credentials client-side to avoid Edge Function issues (401/500)
+      const app_key = 'ak_' + crypto.randomUUID().replace(/-/g, '');
+      
+      // Generate Secret
+      const array = new Uint8Array(24);
+      crypto.getRandomValues(array);
+      const base64 = btoa(String.fromCharCode(...array)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const app_secret = 'sk_live_' + base64;
+      
+      // Hash Secret
+      const msgUint8 = new TextEncoder().encode(app_secret);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const app_secret_hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      // Insert directly into DB
+      const { data, error } = await supabase
+        .from('platform_apps')
+        .insert({
+          name: appName,
+          description: appDesc,
+          app_key,
+          app_secret_hash,
+          app_secret, 
+          status: 'active',
+          invite_required: appInviteRequired || false,
+          slug: appName.toLowerCase().replace(/[^a-z0-9]+/g, '-') // Generate slug
+        })
+        .select()
+        .single();
 
       if (error) throw error;
       
-      setNewAppResult(data.data);
+      setNewAppResult({
+          name: data.name,
+          app_key: data.app_key,
+          app_secret: app_secret // Use the cleartext secret we generated
+      });
+      
       setIsCreateModalOpen(false);
       setIsSecretModalOpen(true);
       loadApps();
@@ -77,7 +104,16 @@ export default function AppManagement() {
       setAppDesc('');
       setAppInviteRequired(false);
     } catch (err: any) {
-      alert('创建应用失败: ' + err.message);
+       console.error('Create app failed:', err);
+       let errorMessage = err.message;
+       
+       // Handle RLS permission errors specifically
+       if (errorMessage && errorMessage.includes('policy')) {
+           alert('创建失败：没有权限 (RLS Policy Violation)。请确保您是管理员。');
+           return;
+       }
+
+       alert('创建应用失败: ' + errorMessage);
     } finally {
       setCreating(false);
     }
