@@ -94,7 +94,7 @@ export default function Dashboard() {
           </button>
           
           <span className={`font-bold text-sm tracking-tight whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0 overflow-hidden hidden' : 'w-auto opacity-100'}`}>
-            APP业务中台管理系统
+            朗伯余弦APP中台管理系统
           </span>
         </div>
 
