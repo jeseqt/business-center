@@ -47,8 +47,45 @@ function App() {
       }
     }, 4000);
 
+    const checkSSOToken = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ssoToken = urlParams.get('sso_token');
+      const ssoSign = urlParams.get('sso_sign');
+      const timestamp = urlParams.get('timestamp');
+
+      if (ssoToken && ssoSign && timestamp) {
+        setDebugStatus('Verifying SSO parameters...');
+        try {
+          const { data, error } = await supabase.functions.invoke('sso-login', {
+            body: { 
+              sso_token: ssoToken,
+              sso_sign: ssoSign,
+              timestamp: timestamp,
+              redirectTo: window.location.origin + window.location.pathname
+            }
+          });
+          if (error) throw error;
+          if (data?.action_link) {
+            setDebugStatus('SSO verification successful, redirecting to login...');
+            // 直接跳转到 magic link，由 Supabase Auth 处理后回调到 redirectTo
+            window.location.href = data.action_link;
+            return true; // Indicating SSO is in progress
+          }
+        } catch (err: any) {
+          console.error('SSO Login Error:', err);
+          setDebugStatus(`SSO Error: ${err.message}`);
+          // Remove the invalid token from URL to prevent loop
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+      return false;
+    };
+
     const initSession = async () => {
       try {
+        const ssoInProgress = await checkSSOToken();
+        if (ssoInProgress) return; // Wait for redirect
+
         setDebugStatus('Checking session...');
         const { data: { session }, error } = await supabase.auth.getSession();
         
