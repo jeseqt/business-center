@@ -35,7 +35,7 @@ export default function Login() {
       <div className="w-full max-w-md space-y-8 animate-in fade-in zoom-in duration-500">
         <div className="text-center flex flex-col items-center">
           <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-            朗伯余弦APP中台管理系统
+            朗伯余弦APP中台
           </h2>
         </div>
 
@@ -43,7 +43,7 @@ export default function Login() {
           <div className="h-1.5 w-full bg-gradient-to-r from-brand-400 via-brand-600 to-brand-800"></div>
           <CardHeader className="space-y-1 pb-2">
             <CardTitle className="text-xl text-center font-bold">欢迎回来</CardTitle>
-            <p className="text-center text-sm text-slate-500">请输入管理员账号进行登录</p>
+            <p className="text-center text-sm text-slate-500">请输入朗伯余弦账号进行登录</p>
           </CardHeader>
           <CardContent className="pt-6">
             <form onSubmit={handleLogin} className="space-y-5">
