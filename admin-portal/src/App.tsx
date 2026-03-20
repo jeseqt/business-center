@@ -67,8 +67,13 @@ function App() {
           if (error) throw error;
           if (data?.action_link) {
             setDebugStatus('SSO verification successful, redirecting to login...');
-            // 直接跳转到 magic link，由 Supabase Auth 处理后回调到 redirectTo
-            window.location.href = data.action_link;
+            
+            // Supabase magic link defaults to jumping to the site url configured in supabase dashboard
+            // We append redirect_to so the verify endpoint knows where to send us back
+            const verifyUrl = new URL(data.action_link);
+            verifyUrl.searchParams.set('redirect_to', window.location.origin + window.location.pathname);
+            
+            window.location.href = verifyUrl.toString();
             return true; // Indicating SSO is in progress
           }
         } catch (err: any) {
