@@ -68,12 +68,12 @@ function App() {
           if (data?.action_link) {
             setDebugStatus('SSO verification successful, redirecting to login...');
             
-            // Supabase magic link defaults to jumping to the site url configured in supabase dashboard
-            // We append redirect_to so the verify endpoint knows where to send us back
-            const verifyUrl = new URL(data.action_link);
-            verifyUrl.searchParams.set('redirect_to', window.location.origin + window.location.pathname);
+            // Supabase backend will return the verify link which includes our correct redirect_to now
+            // But we must also ensure that the redirect URL is fully encoded and recognized by Supabase
+            // as an allowed redirect URL in the dashboard. If it's not allowed, Supabase will fall back to Site URL.
             
-            window.location.href = verifyUrl.toString();
+            // Just use the link returned by the server directly, as the server now overrides the redirect_to
+            window.location.href = data.action_link;
             return true; // Indicating SSO is in progress
           }
         } catch (err: any) {
