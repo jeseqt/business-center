@@ -107,20 +107,25 @@ serve(async (req) => {
     }
 
     // Generate Magic Link for the user
+    // We construct the manual URL to enforce the exact redirect to bypass Supabase's Site URL strict checking
     const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
-      email: email,
-      options: {
-        redirectTo: redirectTo
-      }
+      email: email
     });
 
     if (linkError) throw linkError;
 
-    // linkData.properties.action_link contains the URL with #access_token=...
+    let action_link = linkData.properties.action_link;
+    if (redirectTo) {
+       // Replace whatever redirect_to Supabase put in with our exact requested one
+       const url = new URL(action_link);
+       url.searchParams.set('redirect_to', redirectTo);
+       action_link = url.toString();
+    }
+
     return new Response(
       JSON.stringify({ 
-        action_link: linkData.properties.action_link,
+        action_link: action_link,
         user_id: userId,
         email: email
       }),
