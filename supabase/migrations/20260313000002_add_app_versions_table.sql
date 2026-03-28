@@ -44,16 +44,19 @@ create index if not exists idx_versions_app_plat_code on public.platform_app_ver
 alter table public.platform_app_versions enable row level security;
 
 -- Public read access for active versions (for clients checking updates)
+drop policy if exists "Public read access for active versions" on public.platform_app_versions;
 create policy "Public read access for active versions"
   on public.platform_app_versions for select
   using (status = 'active');
 
 -- Admins can manage all versions
+drop policy if exists "Admins can manage versions" on public.platform_app_versions;
 create policy "Admins can manage versions"
   on public.platform_app_versions for all
   using (is_platform_admin());
 
 -- Trigger for updated_at
+drop trigger if exists on_platform_app_versions_updated on public.platform_app_versions;
 create trigger on_platform_app_versions_updated
   before update on public.platform_app_versions
   for each row execute procedure public.handle_updated_at();

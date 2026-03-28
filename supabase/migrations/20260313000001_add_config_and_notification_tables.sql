@@ -37,10 +37,12 @@ create index if not exists idx_configs_app_env on public.platform_app_configs(ap
 alter table public.platform_app_configs enable row level security;
 
 -- Admins can manage configs (using existing is_platform_admin function)
+drop policy if exists "Admins can manage configs" on public.platform_app_configs;
 create policy "Admins can manage configs" on public.platform_app_configs
     for all using (is_platform_admin());
 
 -- Trigger for updated_at (using existing handle_updated_at function)
+drop trigger if exists on_platform_app_configs_updated on public.platform_app_configs;
 create trigger on_platform_app_configs_updated
   before update on public.platform_app_configs
   for each row execute procedure public.handle_updated_at();
@@ -73,16 +75,19 @@ alter table public.platform_app_notifications enable row level security;
 
 -- Public read access for active notifications (refined from original design)
 -- Allowing public read access as notifications are typically public facing
+drop policy if exists "Public read access for notifications" on public.platform_app_notifications;
 create policy "Public read access for notifications"
   on public.platform_app_notifications for select
   using (true);
 
 -- Admins can manage all notifications (refined to use is_platform_admin for security)
+drop policy if exists "Admins can manage all notifications" on public.platform_app_notifications;
 create policy "Admins can manage all notifications"
   on public.platform_app_notifications for all
   using (is_platform_admin());
 
 -- Trigger for updated_at
+drop trigger if exists update_platform_app_notifications_modtime on public.platform_app_notifications;
 create trigger update_platform_app_notifications_modtime
   before update on public.platform_app_notifications
   for each row execute procedure public.handle_updated_at();
