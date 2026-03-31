@@ -42,6 +42,7 @@ Authorization: Bearer <ACCESS_TOKEN>
 **涉及接口**:
 *   `report-usage` (AI 用量上报)
 *   `client-wallet` (钱包查询)
+*   `sso-login` (单点登录，注：其签名算法略有不同，详情见接口说明)
 
 **签名算法**:
 
@@ -89,7 +90,7 @@ x-sign: a1b2c3d4... (Hex Signature)
 | `email` | string | 是 | 用户邮箱 |
 | `password` | string | 是 | 密码 (min 6 chars) |
 | `invite_code` | string | 否 | 邀请码 (注册时可选，若 App 强制邀请则必填) |
-| `account` | string | 否 | 自定义账号名 (仅注册有效) |
+| `account` | string | 否 | 自定义账号名 (注册时可选；跨应用首次登录时也会作为初始化账号名) |
 
 **Response (Success)**:
 ```json
@@ -100,6 +101,29 @@ x-sign: a1b2c3d4... (Hex Signature)
     "session": { "access_token": "jwt...", "refresh_token": "..." }
   },
   "app_context": { "app_id": "uuid..." }
+}
+```
+
+#### 3.1.2 单点登录 (SSO Login) **[Requires Signature]**
+`POST /functions/v1/sso-login`
+
+支持第三方系统通过服务端签名的 Token 自动登录或注册用户，并生成免密登录的 Magic Link。老用户首次跨应用使用 SSO 登录时，会自动同步至新应用的业务用户表。
+
+**Request Body**:
+
+| 字段 | 类型 | 必填 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `sso_token` | string | 是 | Base64 编码的 JSON 字符串。JSON 需包含 `app_id` (UUID), `email` (邮箱), 以及可选的 `account` (账号名) |
+| `timestamp` | string | 是 | 当前时间戳（毫秒） |
+| `sso_sign` | string | 是 | 对 `sso_token + timestamp` 字符串使用 `App Secret` 计算的 HMAC-SHA256 签名 (Hex) |
+| `redirectTo` | string | 否 | 登录成功后的回调跳转地址 |
+
+**Response (Success)**:
+```json
+{
+  "action_link": "https://<PROJECT>.supabase.co/auth/v1/verify?token=...&redirect_to=...",
+  "user_id": "uuid...",
+  "email": "user@example.com"
 }
 ```
 

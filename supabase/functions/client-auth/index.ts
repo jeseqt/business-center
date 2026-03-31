@@ -163,7 +163,9 @@ serve(async (req) => {
           .insert({
             app_id: app_id,
             external_user_id: userId,
-            metadata: { email }
+            email: email,
+            account: account || email.split('@')[0],
+            metadata: { email, source: 'client_api_auto_join' }
           });
       }
 

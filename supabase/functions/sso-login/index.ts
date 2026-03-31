@@ -68,6 +68,26 @@ serve(async (req) => {
 
     if (existingUser) {
       userId = existingUser.id;
+
+      // 确保老用户在当前 App 下也有 platform_users 记录
+      const { data: platformUser } = await supabase
+        .from('platform_users')
+        .select('id')
+        .eq('app_id', app_id)
+        .eq('external_user_id', userId)
+        .single();
+
+      if (!platformUser) {
+        await supabase
+          .from('platform_users')
+          .insert({
+            app_id: app_id,
+            external_user_id: userId,
+            email: email,
+            account: account || email.split('@')[0],
+            metadata: { email, source: 'sso_login_auto_join' }
+          });
+      }
     } else {
       // Create user if not exists
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
