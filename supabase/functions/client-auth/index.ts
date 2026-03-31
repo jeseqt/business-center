@@ -84,21 +84,27 @@ serve(async (req) => {
       }
 
       // Initialize Wallet (Create default wallet for new user)
-      const { error: walletError } = await supabase
+      const { data: globalWallet, error: walletError } = await supabase
         .from('platform_wallets')
         .insert({
-            app_id: app_id,
-            platform_user_id: platformUser.id, // Use the platform_users PK
+            user_id: userId,
             balance_permanent: 0,
             balance_temporary: 0
-        });
+        })
+        .select()
+        .single();
         
-      if (walletError) {
+      if (walletError && walletError.code !== '23505') { // Ignore unique constraint violation if already exists
           console.error('Failed to create wallet:', walletError);
           // 钱包创建失败也回滚，保持数据一致性
           await supabase.from('platform_users').delete().eq('id', platformUser.id);
           await supabase.auth.admin.deleteUser(userId);
-          throw new Error('Wallet creation failed (Rolled back)');
+          throw new Error('Wallet initialization failed (Rolled back)');
+      }
+
+      // Link platform user to wallet
+      if (globalWallet?.id) {
+        await supabase.from('platform_users').update({ wallet_id: globalWallet.id }).eq('id', platformUser.id);
       }
 
       // Redeem Invite Code (if provided)

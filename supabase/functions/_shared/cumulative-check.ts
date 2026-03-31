@@ -105,9 +105,9 @@ export async function checkAndAwardCumulative(
 async function getWalletId(supabase: SupabaseClient, platformUserId: string) {
     // Helper to find wallet id by platform user id
     const { data } = await supabase
-        .from('platform_wallets')
-        .select('id')
-        .eq('platform_user_id', platformUserId)
+        .from('platform_users')
+        .select('wallet_id')
+        .eq('id', platformUserId)
         .single();
-    return data?.id;
+    return data?.wallet_id;
 }

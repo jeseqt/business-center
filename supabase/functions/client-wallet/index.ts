@@ -24,7 +24,7 @@ serve(async (req) => {
     if (req.method === 'GET') {
       const { data: wallet, error: walletError } = await supabase
         .from('platform_wallets')
-        .select('id, balance, currency, updated_at')
+        .select('id, balance_permanent, updated_at')
         .eq('user_id', user.id)
         .single();
 
@@ -33,10 +33,10 @@ serve(async (req) => {
       }
 
       // If no wallet exists, return 0 balance
-      const result = wallet || {
-        balance: 0,
+      const result = {
+        balance: wallet ? wallet.balance_permanent : 0,
         currency: 'CNY',
-        updated_at: null
+        updated_at: wallet ? wallet.updated_at : null
       };
 
       return new Response(
@@ -69,7 +69,7 @@ serve(async (req) => {
 
        const { data: transactions, error: txError, count } = await supabase
          .from('platform_wallet_transactions')
-         .select('*', { count: 'exact' })
+         .select('*, platform_apps(name)', { count: 'exact' })
          .eq('wallet_id', wallet.id)
          .order('created_at', { ascending: false })
          .range(from, to);

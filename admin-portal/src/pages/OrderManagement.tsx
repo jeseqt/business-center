@@ -64,7 +64,7 @@ export default function OrderManagement() {
       } else {
         query = supabase
             .from('platform_wallet_transactions')
-            .select('*, platform_apps(name), platform_wallets(platform_users(email, external_user_id))');
+            .select('*, platform_apps(name), platform_wallets(user_id, platform_users(email, external_user_id))');
             
         if (statusFilter) {
             query = query.eq('type', statusFilter);

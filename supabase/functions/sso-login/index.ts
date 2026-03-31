@@ -95,14 +95,20 @@ serve(async (req) => {
         .single();
       
       if (!platformError && platformUser) {
-        await supabase
+        const { data: globalWallet, error: walletError } = await supabase
           .from('platform_wallets')
           .insert({
-              app_id: app_id,
-              platform_user_id: platformUser.id,
+              user_id: userId,
               balance_permanent: 0,
               balance_temporary: 0
-          });
+          })
+          .select()
+          .single();
+          
+        const walletId = globalWallet?.id;
+        if (walletId) {
+            await supabase.from('platform_users').update({ wallet_id: walletId }).eq('id', platformUser.id);
+        }
       }
     }
 

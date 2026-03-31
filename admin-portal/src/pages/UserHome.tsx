@@ -324,7 +324,7 @@ export default function UserHome({ session }: UserHomeProps) {
                     restGet(
                         `/rest/v1/platform_wallets?${new URLSearchParams({
                             select: '*',
-                            platform_user_id: `eq.${pu.id}`,
+                            user_id: `eq.${uid}`,
                             limit: '1'
                         }).toString()}`,
                         'wallet fetch'

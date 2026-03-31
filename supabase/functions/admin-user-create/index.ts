@@ -87,29 +87,35 @@ serve(async (req) => {
       return createErrorResponse('User created in Auth but failed to create profile: ' + dbError.message, 500);
     }
 
-    // 6. Initialize Wallet
-    // Check for existing wallet
+    // 6. Initialize Global Wallet
     const { data: existingWallet } = await supabase
         .from('platform_wallets')
         .select('id')
-        .eq('platform_user_id', platformUser.id)
+        .eq('user_id', authUser.user.id)
         .single();
 
+    let walletId = existingWallet?.id;
+
     if (!existingWallet) {
-        const { error: walletError } = await supabase.from('platform_wallets').insert({
-            app_id: app_id,
-            platform_user_id: platformUser.id,
+        const { data: newWallet, error: walletError } = await supabase.from('platform_wallets').insert({
+            user_id: authUser.user.id,
             balance_permanent: 0,
             balance_temporary: 0
-        });
+        }).select().single();
 
-        if (walletError) {
+        if (walletError && walletError.code !== '23505') {
              console.error('Failed to create wallet:', walletError);
              // Rollback user creation
              await supabase.from('platform_users').delete().eq('id', platformUser.id);
              await supabase.auth.admin.deleteUser(authUser.user.id);
              return createErrorResponse('Wallet creation failed: ' + walletError.message, 500);
         }
+        
+        walletId = newWallet?.id;
+    }
+
+    if (walletId) {
+        await supabase.from('platform_users').update({ wallet_id: walletId }).eq('id', platformUser.id);
     }
 
     return createSuccessResponse({

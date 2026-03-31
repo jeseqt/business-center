@@ -80,7 +80,9 @@ serve(async (req) => {
 
     // Transform data to match legacy format
     const usersWithWallet = users.map((u: any) => {
-        const wallet = u.platform_wallets && u.platform_wallets.length > 0 ? u.platform_wallets[0] : null;
+        const wallet = Array.isArray(u.platform_wallets) 
+          ? (u.platform_wallets.length > 0 ? u.platform_wallets[0] : null) 
+          : (u.platform_wallets || null);
         return {
             ...u,
             _resolved_wallet: wallet,
