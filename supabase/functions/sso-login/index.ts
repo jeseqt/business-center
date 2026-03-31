@@ -32,7 +32,7 @@ serve(async (req) => {
       base64 += '=';
     }
     const decodedPayload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0))));
-    const { app_id, email, account } = decodedPayload;
+    const { app_id, email, account, app_user_id } = decodedPayload;
 
     if (!app_id || !email) {
       throw new Error('Token must contain app_id and email');
@@ -66,6 +66,8 @@ serve(async (req) => {
     if (listUserError) throw listUserError;
     const existingUser = existingUsers?.users?.find((u: any) => u.email === email);
 
+    let platformUserRecord = null;
+
     if (existingUser) {
       userId = existingUser.id;
 
@@ -77,8 +79,10 @@ serve(async (req) => {
         .eq('external_user_id', userId)
         .single();
 
+      platformUserRecord = platformUser;
+
       if (!platformUser) {
-        await supabase
+        platformUserRecord = await supabase
           .from('platform_users')
           .insert({
             app_id: app_id,
@@ -86,7 +90,10 @@ serve(async (req) => {
             email: email,
             account: account || email.split('@')[0],
             metadata: { email, source: 'sso_login_auto_join' }
-          });
+          })
+          .select('id')
+          .single()
+          .then(res => res.data);
       }
     } else {
       // Create user if not exists
@@ -115,6 +122,7 @@ serve(async (req) => {
         .single();
       
       if (!platformError && platformUser) {
+        platformUserRecord = platformUser;
         const { data: globalWallet, error: walletError } = await supabase
           .from('platform_wallets')
           .insert({
@@ -130,6 +138,16 @@ serve(async (req) => {
             await supabase.from('platform_users').update({ wallet_id: walletId }).eq('id', platformUser.id);
         }
       }
+    }
+
+    // 如果 App 传入了自己的 user_id，则绑定到 platform_user_bindings 表
+    if (app_user_id && platformUserRecord?.id) {
+        await supabase.from('platform_user_bindings').upsert({
+            platform_user_id: platformUserRecord.id,
+            app_id: app_id,
+            external_user_id: String(app_user_id),
+            identity_type: 'app_user_id'
+        }, { onConflict: 'app_id, external_user_id, identity_type' });
     }
 
     // Generate Magic Link for the user

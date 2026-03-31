@@ -91,6 +91,7 @@ x-sign: a1b2c3d4... (Hex Signature)
 | `password` | string | 是 | 密码 (min 6 chars) |
 | `invite_code` | string | 否 | 邀请码 (注册时可选，若 App 强制邀请则必填) |
 | `account` | string | 否 | 自定义账号名 (注册时可选；跨应用首次登录时也会作为初始化账号名) |
+| `app_user_id` | string | 否 | 第三方 App 自身的本地用户 ID。传入后会与中台账号进行绑定映射，后续可通过该 ID 查询用户信息 |
 
 **Response (Success)**:
 ```json
@@ -113,7 +114,7 @@ x-sign: a1b2c3d4... (Hex Signature)
 
 | 字段 | 类型 | 必填 | 说明 |
 | :--- | :--- | :--- | :--- |
-| `sso_token` | string | 是 | Base64 编码的 JSON 字符串。JSON 需包含 `app_id` (UUID), `email` (邮箱), 以及可选的 `account` (账号名) |
+| `sso_token` | string | 是 | Base64 编码的 JSON 字符串。JSON 需包含 `app_id` (UUID), `email` (邮箱), 以及可选的 `account` (账号名), `app_user_id` (App 自有用户 ID) |
 | `timestamp` | string | 是 | 当前时间戳（毫秒） |
 | `sso_sign` | string | 是 | 对 `sso_token + timestamp` 字符串使用 `App Secret` 计算的 HMAC-SHA256 签名 (Hex) |
 | `redirectTo` | string | 否 | 登录成功后的回调跳转地址 |

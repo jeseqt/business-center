@@ -16,7 +16,7 @@ serve(async (req) => {
 
     // 2. Parse Body
     const body = await req.json();
-    const { action, email, password, invite_code, account } = body;
+    const { action, email, password, invite_code, account, app_user_id } = body;
 
     if (!email || !password) {
       throw new Error('Email and password are required');
@@ -132,6 +132,16 @@ serve(async (req) => {
       if (signInError) throw signInError;
       result = signInData;
 
+      // 如果 App 传入了自己的 user_id，则绑定到 platform_user_bindings 表
+      if (app_user_id && platformUser?.id) {
+          await supabase.from('platform_user_bindings').upsert({
+              platform_user_id: platformUser.id,
+              app_id: app_id,
+              external_user_id: String(app_user_id),
+              identity_type: 'app_user_id'
+          }, { onConflict: 'app_id, external_user_id, identity_type' });
+      }
+
     } else if (action === 'login') {
       // 3.2 Login Logic
       // 先登录 Supabase Auth
@@ -146,19 +156,20 @@ serve(async (req) => {
 
       // 检查该用户是否属于当前 APP
       // 查询 platform_users
-      const { data: platformUser, error: platformError } = await supabase
+      let platformUser = await supabase
         .from('platform_users')
         .select('id')
         .eq('app_id', app_id)
         .eq('external_user_id', userId)
-        .single();
+        .single()
+        .then(res => res.data);
 
       if (!platformUser) {
         // 关键逻辑：如果用户存在于 Auth 但不在当前 App 中
         // 策略 A: 自动注册进当前 App (本次采用)
         // 策略 B: 拒绝登录
         
-        await supabase
+        platformUser = await supabase
           .from('platform_users')
           .insert({
             app_id: app_id,
@@ -166,10 +177,23 @@ serve(async (req) => {
             email: email,
             account: account || email.split('@')[0],
             metadata: { email, source: 'client_api_auto_join' }
-          });
+          })
+          .select('id')
+          .single()
+          .then(res => res.data);
       }
 
       result = signInData;
+
+      // 如果 App 传入了自己的 user_id，则绑定到 platform_user_bindings 表
+      if (app_user_id && platformUser?.id) {
+          await supabase.from('platform_user_bindings').upsert({
+              platform_user_id: platformUser.id,
+              app_id: app_id,
+              external_user_id: String(app_user_id),
+              identity_type: 'app_user_id'
+          }, { onConflict: 'app_id, external_user_id, identity_type' });
+      }
 
     } else {
       throw new Error('Invalid action. Use "register" or "login"');
