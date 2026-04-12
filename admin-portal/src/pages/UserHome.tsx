@@ -19,6 +19,7 @@ export default function UserHome({ session }: UserHomeProps) {
   const [loading, setLoading] = useState(true);
   const [transactionsLoading, setTransactionsLoading] = useState(true);
   const [wallet, setWallet] = useState<PlatformWallet | null>(null);
+  const [platformUser, setPlatformUser] = useState<any>(null);
   const [transactions, setTransactions] = useState<PlatformWalletTransaction[]>([]);
   const [showTransactions, setShowTransactions] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
@@ -285,6 +286,7 @@ export default function UserHome({ session }: UserHomeProps) {
         if (!rpcError && dashboardData && mounted) {
             console.log('[UserHome] RPC success:', dashboardData);
             if (dashboardData.wallet) setWallet(dashboardData.wallet);
+            if (dashboardData.platform_user) setPlatformUser(dashboardData.platform_user);
             if (dashboardData.transactions) setTransactions(dashboardData.transactions);
             
             setLoading(false);
@@ -318,6 +320,9 @@ export default function UserHome({ session }: UserHomeProps) {
                 const pu = Array.isArray(platformUserList) ? platformUserList[0] : null;
                 if (!pu) {
                     throw new Error('未找到用户档案');
+                }
+                if (mounted) {
+                    setPlatformUser(pu);
                 }
                 lastStage = 'fallback-wallet';
                 const walletList = await withTimeout(
@@ -530,7 +535,7 @@ export default function UserHome({ session }: UserHomeProps) {
 
                     {/* 3. 充值中心 */}
                     <div className="rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl shadow-slate-200/50 border border-slate-100 bg-white relative z-10">
-                        {wallet && <RechargePanel appId={wallet.app_id} className="border-0 shadow-none rounded-none" />}
+                        {wallet && platformUser && <RechargePanel appId={platformUser.app_id} className="border-0 shadow-none rounded-none" />}
                     </div>
                 </div>
       </div>
