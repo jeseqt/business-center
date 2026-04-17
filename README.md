@@ -105,7 +105,28 @@ x-sign: a1b2c3d4... (Hex Signature)
 }
 ```
 
-#### 3.1.2 单点登录 (SSO Login) **[Requires Signature]**
+#### 3.1.2 修改用户资料/密码 (Update User Profile)
+由于中台直接基于 Supabase 构建，客户端可直接使用登录后获得的 `access_token` 调用 Supabase 官方的标准 API 来修改用户个人信息（如密码、邮箱等），**中台作为唯一的身份源**，无需调用额外的业务中台封装接口。
+
+**修改密码示例 (通过 Supabase Client SDK)**:
+```javascript
+import { createClient } from '@supabase/supabase-js'
+
+// 使用中台分配的 PROJECT_URL 和 ANON_KEY 初始化
+const supabase = createClient('YOUR_SUPABASE_PROJECT_URL', 'YOUR_SUPABASE_ANON_KEY')
+
+// 确保用户已登录 (拥有 access_token)
+const { data, error } = await supabase.auth.updateUser({
+  password: 'new-password'
+})
+
+if (error) console.error("密码修改失败:", error.message)
+else console.log("密码修改成功:", data)
+```
+
+*(注：该操作会自动同步更新中台 Auth 系统，您的 App 客户端请勿在本地维护独立的密码库，所有身份认证以中台为准。)*
+
+#### 3.1.3 单点登录 (SSO Login) **[Requires Signature]**
 `POST /functions/v1/sso-login`
 
 支持第三方系统通过服务端签名的 Token 自动登录或注册用户，并生成免密登录的 Magic Link。老用户首次跨应用使用 SSO 登录时，会自动同步至新应用的业务用户表。
