@@ -1,5 +1,5 @@
--- Migration ID: 20260419000001_fix_auth_trigger_fallback_again
--- Description: 恢复在 global_wallets 迁移中意外丢失的 app_id fallback 逻辑，防止注册时报错 "Database error creating new user"
+-- Migration ID: 20260419000002_fix_auth_trigger_notice
+-- Description: Fix RAISE EXCEPTION to RAISE NOTICE so fallback actually works.
 
 CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
 RETURNS trigger

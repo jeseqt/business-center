@@ -82,6 +82,20 @@ x-sign: a1b2c3d4... (Hex Signature)
 
 集成了 Supabase Auth 注册/登录与业务用户表 (`platform_users`) 的自动同步。
 
+⚠️ **[重要更新通知] 接口调用方式变更 (2026-04-19)**
+由于不同 Supabase 项目的跨项目调用会导致 API 网关层的 JWT 强校验拦截 (`401 Missing authorization header`)，`client-auth` 接口已关闭网关层的 JWT 校验。
+**所有接入中台的 App 必须同步以下 Header 改动：**
+*   **移除**: `Authorization: Bearer <anon_key>` (不要再传调用方的 anon key)
+*   **移除**: `apikey: <anon_key>`
+*   **必填**: `x-app-id: <分配给你的 app_key>`
+
+**正确的 Request Headers 示例**:
+```http
+POST /functions/v1/client-auth
+Content-Type: application/json
+x-app-id: ak_0d4f43732e5f4eee83de69b8f2a50b57
+```
+
 **Request Body**:
 
 | 字段 | 类型 | 必填 | 说明 |

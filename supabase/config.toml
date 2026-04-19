@@ -45,3 +45,6 @@ verify_jwt = false
 
 [functions.sso-login]
 verify_jwt = false
+
+[functions.client-auth]
+verify_jwt = false

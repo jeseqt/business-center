@@ -21,7 +21,7 @@ export async function verifyApp(
   options: VerifyAppOptions = {}
 ): Promise<AppContext> {
   const { requireSignature = false } = options;
-  const appKey = req.headers.get('x-app-id');
+  let appKey = req.headers.get('x-app-id');
   const signature = req.headers.get('x-sign');
   const timestamp = req.headers.get('x-timestamp');
   
@@ -29,16 +29,28 @@ export async function verifyApp(
     throw new Error('Missing x-app-id header');
   }
 
+  appKey = appKey.trim().replace(/^["']|["']$/g, '');
+
   // 查询应用信息
-  const { data: app, error } = await supabaseClient
+  console.log(`[auth-middleware] Request appKey: "${appKey}"`);
+  
+  const { data: appList, error } = await supabaseClient
     .from('platform_apps')
     .select('id, app_key, status, app_secret_hash, app_secret, invite_required')
-    .eq('app_key', appKey)
-    .single();
+    .eq('app_key', appKey);
 
-  if (error || !app) {
-    throw new Error('Invalid App ID');
+  if (error) {
+    console.error(`[auth-middleware] DB Error querying appKey "${appKey}":`, error);
+    throw new Error(`Invalid App ID: ${error.message}`);
   }
+
+  if (!appList || appList.length === 0) {
+    console.error(`[auth-middleware] No app found for appKey "${appKey}" in database`);
+    throw new Error(`Invalid App ID: App not found`);
+  }
+
+  console.log(`[auth-middleware] Found app with ID: ${appList[0].id}, Status: ${appList[0].status}`);
+  const app = appList[0];
 
   if (app.status !== 'active') {
     throw new Error('App is not active');
