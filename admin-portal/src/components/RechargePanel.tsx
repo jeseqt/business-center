@@ -260,6 +260,10 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
   };
 
   const handleRecharge = async () => {
+    setError('功能即将上线');
+    return;
+    // Temporarily disabled
+    /*
     if (!appId) return;
     setLoading(true);
     setError(null);
@@ -340,6 +344,7 @@ export function RechargePanel({ appId, className }: RechargePanelProps) {
     } finally {
       setLoading(false);
     }
+    */
   };
 
   const handleRedeemInvite = async () => {

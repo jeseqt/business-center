@@ -154,6 +154,10 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
   };
 
   const handleRecharge = async () => {
+    setError('功能即将上线');
+    return;
+    // Temporarily disabled
+    /*
     setLoading(true);
     setError(null);
     try {
@@ -226,6 +230,7 @@ export function RechargeDialog({ open, onOpenChange, appId }: RechargeDialogProp
     } finally {
       setLoading(false);
     }
+    */
   };
 
   const getProductIcon = (name: string) => {
